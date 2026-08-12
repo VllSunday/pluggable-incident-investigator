@@ -1,0 +1,36 @@
+services:
+  investigator:
+    build:
+      context: .
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - investigator-data:/app/data
+
+  dashboard:
+    build:
+      context: .
+    command:
+      - uv
+      - run
+      - --no-sync
+      - streamlit
+      - run
+      - src/incident_investigator/ui/app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+    env_file:
+      - .env
+    environment:
+      INVESTIGATOR_API_URL: http://investigator:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      investigator:
+        condition: service_healthy
+
+volumes:
+  investigator-data:

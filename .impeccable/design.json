@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-12T20:15:00+05:00",
+  "title": "Design System: Incident Investigator",
+  "extensions": {
+    "colorMeta": {
+      "paper": {"role":"neutral","displayName":"Case Paper","canonical":"#f5f3ec","tonalRamp":["#24231f","#46443d","#6f6c61","#98958a","#c2bfb5","#dddacf","#f0eee6","#fbfaf5"]},
+      "ink": {"role":"neutral","displayName":"Sumi Ink","canonical":"#20231f","tonalRamp":["#171916","#292d28","#454b44","#626a62","#818981","#a5aba5","#cdd1cd","#f1f3f1"]},
+      "muted": {"role":"neutral","displayName":"Field Note Gray","canonical":"#687069","tonalRamp":["#202420","#384039","#515b53","#687069","#858d86","#a5aba6","#cdd1cd","#f1f3f1"]},
+      "rule": {"role":"neutral","displayName":"Crease Rule","canonical":"#d9d7cd","tonalRamp":["#282723","#4a4942","#6e6c63","#939188","#b7b5ac","#d0cec5","#e8e6df","#f8f7f2"]},
+      "vermilion": {"role":"primary","displayName":"Investigation Vermilion","canonical":"#c94735","tonalRamp":["#3b100b","#682015","#913021","#b8402e","#d85d49","#e88776","#f2b6a9","#fbe7e2"]},
+      "gold-fold": {"role":"secondary","displayName":"Fold Gold","canonical":"#b68a35","tonalRamp":["#312208","#58400f","#7d5e19","#a17c27","#c19a45","#d8b875","#ead8ad","#f8f0dc"]},
+      "success": {"role":"tertiary","displayName":"Verified Green","canonical":"#307257","tonalRamp":["#0b281c","#174735","#24634b","#378064","#589a7e","#82b59d","#b5d1c2","#e6f0ea"]},
+      "white-sheet": {"role":"neutral","displayName":"White Sheet","canonical":"#fffefa","tonalRamp":["#292824","#4e4c45","#747169","#99978f","#bfbbb4","#dcd9d2","#f0eee9","#fffefa"]}
+    },
+    "typographyMeta": {
+      "display": {"displayName":"Case Heading","purpose":"Incident title and first-viewport focal point."},
+      "body": {"displayName":"Investigation Body","purpose":"Evidence, hypotheses, critique, and action prose."},
+      "label": {"displayName":"Instrument Label","purpose":"Sources, timestamps, field names, and identifiers."}
+    },
+    "shadows": [
+      {"name":"selected-sheet","value":"0 8px 26px rgba(43,46,40,.06)","purpose":"Current incident selection only."}
+    ],
+    "motion": [
+      {"name":"active-breathe","value":"1.8s ease-in-out infinite","purpose":"Marks only the currently running or approval-blocked stage; disabled for reduced motion."}
+    ],
+    "breakpoints": [
+      {"name":"compact","value":"900px"}
+    ]
+  },
+  "components": [
+    {
+      "name":"Secondary Button",
+      "kind":"button",
+      "refersTo":"button-secondary",
+      "description":"Square instrument action used for navigation and secondary decisions.",
+      "html":"<button class=\"ds-button\">OPEN INCIDENT</button>",
+      "css":".ds-button{min-height:2.45rem;padding:.55rem 1rem;border:1px solid #20231f;border-radius:0;background:transparent;color:#20231f;font:650 .82rem 'Segoe UI',system-ui,sans-serif}.ds-button:hover,.ds-button:focus-visible{border-color:#c94735;color:#c94735;outline:2px solid transparent}"
+    },
+    {
+      "name":"Investigation Fold",
+      "kind":"custom",
+      "refersTo":"fold",
+      "description":"Auditable stage in the signal-to-action path.",
+      "html":"<section class=\"ds-fold\"><span class=\"ds-node\">02</span><small>EVIDENCE</small><p>Three independent sources support this finding.</p></section>",
+      "css":".ds-fold{position:relative;padding:1.1rem 1.2rem;background:#fffefa;color:#20231f;border:1px solid #d9d7cd;clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,0 100%);font-family:'Segoe UI',system-ui,sans-serif}.ds-fold:after{content:'';position:absolute;right:0;top:0;border-style:solid;border-width:0 18px 18px 0;border-color:transparent #f5f3ec #b68a35 transparent}.ds-fold small{font:650 .68rem ui-monospace,Consolas,monospace;letter-spacing:.1em}.ds-fold p{font-size:.88rem;line-height:1.48}.ds-node{position:absolute;left:-42px;top:14px}"
+    },
+    {
+      "name":"Status Marker",
+      "kind":"chip",
+      "description":"Text-plus-symbol status that remains legible without color.",
+      "html":"<span class=\"ds-status\"><b>!</b> NEEDS DECISION</span>",
+      "css":".ds-status{display:inline-flex;align-items:center;gap:.35rem;color:#c94735;font:700 .72rem 'Segoe UI',system-ui,sans-serif}.ds-status b{display:grid;place-items:center;width:17px;height:17px;border:1px solid currentColor;border-radius:50%;font-size:.65rem}"
+    }
+  ],
+  "narrative": {
+    "northStar":"The Unfolding Case File",
+    "overview":"The interface behaves like a precise paper investigation record. A single signal unfolds into evidence, hypotheses, reflection, action, and result; every conclusion remains visually traceable to the previous fold. The atmosphere is calm, tactile, and operational rather than futuristic or theatrical.",
+    "keyCharacteristics":["Warm paper ground with dark ink and rare vermilion emphasis.","A numbered vertical investigation spine as the signature component.","Square, clipped geometry; circles are reserved for compact status markers.","Evidence and action remain more prominent than decorative chrome.","Motion is limited to the currently active investigation step and respects reduced motion."],
+    "rules":[
+      {"name":"The Red Pencil Rule","body":"Vermilion marks decisions, risk, and active state; it is never used as general decoration.","section":"colors"},
+      {"name":"The Evidence Contrast Rule","body":"Status is always carried by text or a symbol as well as color.","section":"colors"},
+      {"name":"The Instrument Label Rule","body":"Monospace type is reserved for data-bearing labels and identifiers, not long-form prose.","section":"typography"},
+      {"name":"The Flat Case File Rule","body":"Resting content is separated by paper tone and crease lines; shadow exists only to indicate current selection.","section":"elevation"}
+    ],
+    "dos":["Do keep the evidence → hypothesis → reflection → action sequence visibly continuous.","Do pair every status color with a word or symbol.","Do reserve the strongest visual emphasis for current risk, active work, and approval.","Do let real evidence determine vertical density instead of forcing equal-height panels."],
+    "donts":["Don't replace the spine with a generic equal-card dashboard grid.","Don't add neon glows, glass panels, or terminal-themed decoration.","Don't use rounded containers as the default silhouette.","Don't animate completed or idle stages; the moving signal belongs only to active work."]
+  }
+}

@@ -1,0 +1,11 @@
+FROM python:3.12.10-slim-bookworm
+
+RUN pip install --no-cache-dir pytest==8.4.2 ruff==0.12.12 \
+    && useradd --create-home --uid 10001 sandbox
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+USER sandbox
+WORKDIR /workspace
+
