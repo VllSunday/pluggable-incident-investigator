@@ -28,6 +28,16 @@ services:
       INVESTIGATOR_API_URL: http://investigator:8000
     ports:
       - "8501:8501"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
     depends_on:
       investigator:
         condition: service_healthy
