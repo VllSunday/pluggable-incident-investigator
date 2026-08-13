@@ -25,7 +25,8 @@ async provider failures. Следующий observability-шаг — trace metad
 
 GitHub и GitLab CI fixtures проверены на реальных pipeline. Runtime fixture проверен по
 полному пути Prometheus rule → Alertmanager webhook → durable graph → Prometheus evidence.
-Осталось автоматизировать ground-truth eval runner.
+GitLab fixture также проверен через authenticated webhook → durable graph → real GitLab
+evidence в read-only deployment. Ground-truth eval runner покрывает оба класса.
 
 ## Milestone 4 — Safe remediation — core готов
 
@@ -50,7 +51,7 @@ Telegram callback остаётся отдельным transport enhancement.
 Browser-based QA двуязычного dashboard завершён на desktop/mobile: language route,
 операторские budget notes и компактное представление metric evidence проверены.
 
-1. Проверить Telegram notifications на тестовом чате; callback оставить optional.
-2. Credential-dependent smoke tests: Telegram test chat и LangSmith cloud trace.
+1. Credential-dependent smoke tests: Telegram test chat и LangSmith cloud trace.
+2. Telegram approval callback остаётся optional enhancement и не блокирует capstone.
 
 Threat model, demo runbook и проверенная презентация с измеримыми результатами готовы.

@@ -65,6 +65,9 @@ uv run python scripts/run_connected_gitlab_demo.py `
 5. независимый critic подтвердил patch;
 6. LangGraph остановился на HitL, branch ещё не создана.
 
+В read-only deployment с выключенным remediation тот же webhook-path штатно завершается
+`no_safe_action`: evidence и причина сохраняются, но branch не создаётся.
+
 Только для специально выделенного demo project повторите с `--approve`. Ожидаемый
 результат: один commit, отдельная branch и draft GitLab MR. Merge не выполняется агентом.
 Уже проверенный пример: `AllSunday/incident-investigator-demo-ci!1`; его pipeline завершился
