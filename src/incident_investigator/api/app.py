@@ -123,7 +123,12 @@ async def lifespan(app):
             prometheus_client = await stack.enter_async_context(
                 httpx.AsyncClient(base_url=settings.prometheus_url, timeout=15)
             )
-            evidence_providers.append(PrometheusEvidenceProvider(prometheus_client))
+            evidence_providers.append(
+                PrometheusEvidenceProvider(
+                    prometheus_client,
+                    query_templates=settings.prometheus_query_templates,
+                )
+            )
         notification_sinks = []
         if settings.telegram_bot_token and settings.telegram_chat_id:
             telegram_client = await stack.enter_async_context(

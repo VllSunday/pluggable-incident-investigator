@@ -56,6 +56,27 @@ docker compose up --build
 SQLite incidents/checkpoints находятся в named volume `investigator-data` и переживают
 пересоздание контейнера.
 
+### Полный runtime-стенд
+
+Для воспроизводимого Alertmanager-сценария используйте дополнительный compose override:
+
+```powershell
+docker compose -f compose.yaml -f compose.runtime.yaml up -d --build
+```
+
+Он добавляет synthetic runtime app, Prometheus с alert rule и Alertmanager. Override
+переводит investigator в connected mode, подключает Prometheus по внутренней Docker-сети и
+задаёт четыре server-owned PromQL-шаблона: доступность target, request rate, error rate и
+error ratio. Значение `runtime-demo-token` в fixture публичное и предназначено только для
+локального стенда; в реальном контуре используйте отдельный случайный secret.
+
+Проверить состояние можно в dashboard (`:8501`), Prometheus (`:9090`) и Alertmanager
+(`:9093`). Для удаления только тестового состояния и volume выполните:
+
+```powershell
+docker compose -f compose.yaml -f compose.runtime.yaml down -v
+```
+
 ## Вариант 3 — один Linux-сервер
 
 1. Установить Docker Engine и Compose plugin.
@@ -108,6 +129,10 @@ receivers:
 
 Adapter принимает стандартный `Authorization: Bearer <token>` от Alertmanager, а также
 `X-Incident-Token` для локальных тестов.
+
+PromQL не принимается из alert payload или ответа LLM. Оператор задаёт allowlisted templates
+в `INVESTIGATOR_PROMETHEUS_QUERY_TEMPLATES`; adapter подставляет только нормализованное имя
+service. Это сохраняет read-only boundary и предсказуемый бюджет запросов.
 
 ## Масштабирование
 

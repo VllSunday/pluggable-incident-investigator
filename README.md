@@ -7,7 +7,7 @@ Capstone-проект: расширяемая система расследов�
 ## Текущий MVP
 
 - Источники событий: GitHub Actions `workflow_run`, GitLab `Pipeline Hook` и Prometheus Alertmanager.
-- Среды исполнения: тестовый GitHub-репозиторий и локальный Docker Compose стенд.
+- Среды исполнения: тестовые GitHub/GitLab-репозитории и локальный Docker Compose runtime-стенд.
 - Критические действия: создание issue/PR и перезапуск demo-контейнера — только после approval.
 - Любая интеграция подключается через контракт адаптера; ядро не импортирует GitHub,
   Prometheus, Docker или Telegram SDK.
@@ -55,6 +55,7 @@ uv run streamlit run src/incident_investigator/ui/app.py
 эскалирует расследование до подключения реальных evidence providers.
 
 Инструкции локальной и серверной установки: [`docs/deployment.md`](docs/deployment.md).
+Настройка traces и ground-truth eval: [`docs/observability.md`](docs/observability.md).
 
 ## Safe remediation
 
@@ -83,6 +84,19 @@ patch, выполняет `pytest` и `ruff` без сети, останавли
 
 Fixture находится в [`demo/ci-python-app`](demo/ci-python-app), а real-Docker test — в
 [`tests/integration/test_real_docker_remediation.py`](tests/integration/test_real_docker_remediation.py).
+
+Отдельный runtime-сценарий поднимает неисправное приложение, Prometheus, настоящее alert
+rule и Alertmanager. Webhook проходит через FastAPI и durable worker, а PromQL-шаблоны
+остаются серверной конфигурацией и не генерируются моделью:
+
+```powershell
+docker compose -f compose.yaml -f compose.runtime.yaml up -d --build
+```
+
+Через несколько секунд incident появится в dashboard на `http://127.0.0.1:8501`.
+Prometheus и Alertmanager доступны на портах `9090` и `9093`. Стенд намеренно генерирует
+80% ошибок; остановка выполняется командой
+`docker compose -f compose.yaml -f compose.runtime.yaml down`.
 
 Для настоящего GitHub Actions run сначала передайте read/write token в process environment,
 не печатая его в terminal history:

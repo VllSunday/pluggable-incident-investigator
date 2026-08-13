@@ -97,15 +97,16 @@ def build_investigation_graph(
             if getattr(provider, "sources", None) is None
             or incident.source in provider.sources
         ]
-        calls = [
-            provider.collect(incident, request)
+        call_specs = [
+            (provider, request)
             for request in requests
             for provider in applicable_providers
         ]
         used = state.get("tool_calls_used", 0)
         started_at = datetime.fromisoformat(state["started_at"])
         elapsed = (datetime.now(UTC) - started_at).total_seconds()
-        if used + len(calls) > services.max_tool_calls:
+        remaining_calls = services.max_tool_calls - used
+        if remaining_calls <= 0:
             return {
                 "errors": [*errors, "budget:tool_call_budget_exhausted"],
                 "iteration": state.get("max_iterations", 3),
@@ -117,6 +118,13 @@ def build_investigation_graph(
                 "iteration": state.get("max_iterations", 3),
                 "status": "evidence_budget_exhausted",
             }
+        if len(call_specs) > remaining_calls:
+            call_specs = call_specs[:remaining_calls]
+            errors.append("budget:tool_call_budget_truncated")
+        calls = [
+            provider.collect(incident, request)
+            for provider, request in call_specs
+        ]
         results = await asyncio.gather(*calls, return_exceptions=True)
         for result in results:
             if isinstance(result, BaseException):
@@ -130,7 +138,7 @@ def build_investigation_graph(
             "errors": errors,
             "evidence_requests": [],
             "iteration": state.get("iteration", 0) + 1,
-            "tool_calls_used": used + len(calls),
+            "tool_calls_used": used + len(call_specs),
             "status": "evidence_collected",
         }
 
@@ -142,6 +150,13 @@ def build_investigation_graph(
             "hypotheses": [item.model_dump(mode="json") for item in hypotheses],
             "status": "hypotheses_generated",
         }
+
+    def route_after_evidence(
+        state: InvestigationState,
+    ) -> Literal["generate_hypotheses", "finish"]:
+        if state.get("status") == "evidence_budget_exhausted":
+            return "finish"
+        return "generate_hypotheses"
 
     async def reflect(state: InvestigationState) -> dict[str, Any]:
         decision = await services.engine.reflect(
@@ -347,7 +362,7 @@ def build_investigation_graph(
     builder.add_node("finish", finish)
 
     builder.add_edge(START, "collect_evidence")
-    builder.add_edge("collect_evidence", "generate_hypotheses")
+    builder.add_conditional_edges("collect_evidence", route_after_evidence)
     builder.add_edge("generate_hypotheses", "reflect")
     builder.add_conditional_edges("reflect", route_after_reflection)
     builder.add_conditional_edges("propose_action", route_after_policy)

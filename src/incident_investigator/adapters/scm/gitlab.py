@@ -34,12 +34,15 @@ class GitLabSourceControlProvider:
 
     async def open_change_request(self, spec: ChangeRequestSpec) -> ChangeRequestResult:
         project = quote(spec.repository, safe="")
+        title = spec.title
+        if spec.draft and not title.lower().startswith(("draft:", "wip:")):
+            title = f"Draft: {title}"
         response = await self._client.post(
             f"/projects/{project}/merge_requests",
             json={
                 "source_branch": spec.branch_name,
                 "target_branch": spec.base_revision,
-                "title": spec.title,
+                "title": title,
                 "description": spec.description,
                 "draft": spec.draft,
             },

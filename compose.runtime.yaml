@@ -1,0 +1,40 @@
+services:
+  investigator:
+    environment:
+      INVESTIGATOR_MODE: connected
+      INVESTIGATOR_PROMETHEUS_URL: http://prometheus:9090
+      INVESTIGATOR_ALERTMANAGER_WEBHOOK_TOKEN: runtime-demo-token
+      INVESTIGATOR_REMEDIATION_ENABLED: "false"
+      INVESTIGATOR_PROMETHEUS_QUERY_TEMPLATES: >-
+        {"target_health":"up{{job={service}}}","request_rate":"sum(rate(demo_http_requests_total{{job={service}}}[30s]))","error_rate":"sum(rate(demo_http_errors_total{{job={service}}}[30s]))","error_ratio":"sum(rate(demo_http_errors_total{{job={service}}}[30s])) / clamp_min(sum(rate(demo_http_requests_total{{job={service}}}[30s])), 0.001)"}
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  runtime-app:
+    build:
+      context: demo/runtime-app
+    environment:
+      DEMO_ERROR_FRACTION: "0.8"
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./demo/runtime-observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./demo/runtime-observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - runtime-app
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./demo/runtime-observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"

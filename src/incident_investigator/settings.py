@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     gitlab_api_token: SecretStr | None = None
     gitlab_api_url: str = "https://gitlab.com/api/v4"
     prometheus_url: str | None = None
+    prometheus_query_templates: dict[str, str] = Field(
+        default_factory=lambda: {"target_health": "up{{job={service}}}"}
+    )
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-5.4-mini"
     telegram_bot_token: SecretStr | None = None

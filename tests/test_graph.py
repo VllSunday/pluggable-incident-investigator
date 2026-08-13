@@ -39,6 +39,15 @@ class FakeEvidenceProvider:
         ]
 
 
+class TrackingEvidenceProvider(FakeEvidenceProvider):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def collect(self, incident: IncidentEvent, request: str):
+        self.calls += 1
+        return await super().collect(incident, request)
+
+
 class FakeEngine:
     async def generate_hypotheses(self, incident: IncidentEvent, evidence):
         del incident
@@ -69,6 +78,15 @@ class FakeEngine:
             expected_outcome="Database target and application health checks become healthy",
         )
 
+
+class GatheringEngine(FakeEngine):
+    async def reflect(self, incident: IncidentEvent, evidence, hypotheses):
+        del incident, evidence, hypotheses
+        return ReflectionDecision(
+            outcome=ReflectionOutcome.GATHER_MORE,
+            critique="More evidence is required",
+            additional_evidence_requests=("request one", "request two"),
+        )
 
 class FakeExecutor:
     name = "restart_demo_database"
@@ -127,3 +145,52 @@ async def test_graph_pauses_before_high_risk_action_and_resumes() -> None:
     assert completed["status"] == "recovered"
     assert completed["action_result"]["success"] is True
     assert completed["recovery_verified"] is True
+
+
+@pytest.mark.asyncio
+async def test_graph_exits_before_starting_calls_when_tool_budget_is_exhausted() -> None:
+    provider = TrackingEvidenceProvider()
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(provider,),
+            engine=FakeEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner({}),
+            recovery_verifier=FakeRecoveryVerifier(),
+            max_tool_calls=0,
+        )
+    )
+
+    completed = await graph.ainvoke(
+        initial_state(incident()),
+        config={"configurable": {"thread_id": "incident-budget-test"}},
+    )
+
+    assert completed["status"] == "evidence_budget_exhausted"
+    assert completed["errors"] == ["budget:tool_call_budget_exhausted"]
+    assert provider.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_graph_uses_remaining_budget_then_escalates_at_iteration_limit() -> None:
+    provider = TrackingEvidenceProvider()
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(provider,),
+            engine=GatheringEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner({}),
+            recovery_verifier=FakeRecoveryVerifier(),
+            max_tool_calls=2,
+        )
+    )
+
+    completed = await graph.ainvoke(
+        initial_state(incident(), max_iterations=2),
+        config={"configurable": {"thread_id": "incident-partial-budget-test"}},
+    )
+
+    assert completed["status"] == "escalated"
+    assert completed["errors"] == ["budget:tool_call_budget_truncated"]
+    assert completed["tool_calls_used"] == 2
+    assert provider.calls == 2

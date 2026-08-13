@@ -7,21 +7,25 @@
 - Policy engine, budgets и tool runtime.
 - Unit и failure-path tests.
 
-## Milestone 2 — Investigation graph — основа готова
+## Milestone 2 — Investigation graph — готово
 
 - LangGraph state и durable checkpoint.
 - Structured LLM outputs.
 - Evidence collection, hypothesis verification и reflection loop.
-- LangSmith tracing.
+- Bounded evidence execution с graceful truncation и эскалацией.
 
-Готовы durable SQLite checkpoints, structured OpenAI engine и persistent budgets. Осталось
-зафиксировать trace metadata/tags и собрать eval dashboard.
+Готовы durable SQLite checkpoints, structured OpenAI engine, persistent budgets и обработка
+async provider failures. Следующий observability-шаг — trace metadata/tags и eval dashboard.
 
-## Milestone 3 — Demo environments — следующий
+## Milestone 3 — Demo environments — стенды готовы
 
 - GitHub repository с контролируемыми CI failures.
 - Docker Compose: demo app, Prometheus, Alertmanager и логи.
 - Ground-truth fixtures и eval runner.
+
+GitHub и GitLab CI fixtures проверены на реальных pipeline. Runtime fixture проверен по
+полному пути Prometheus rule → Alertmanager webhook → durable graph → Prometheus evidence.
+Осталось автоматизировать ground-truth eval runner.
 
 ## Milestone 4 — Safe remediation — core готов
 
@@ -29,8 +33,8 @@
 - Allowlisted Docker checks, structured critic и hash revalidation.
 - Human approval и draft GitHub PR/GitLab MR через общий SCM contract.
 
-Осталось подготовить отдельный demo repository/sandbox image с известными поломками и
-проверить реальный PR/MR end-to-end на тестовых GitHub/GitLab проектах.
+Отдельные demo repositories и sandbox image готовы. GitLab end-to-end создал настоящий
+draft MR после patch repair, pytest, Ruff, critic и HitL; pipeline MR успешно завершился.
 
 ## Milestone 5 — Interfaces — основной UI готов
 
@@ -40,3 +44,9 @@
 
 FastAPI incident/approval API, Telegram message sink и двуязычный Streamlit dashboard готовы.
 Telegram callback остаётся отдельным transport enhancement.
+
+## До завершённого capstone
+
+1. Провести browser-based QA двуязычного dashboard и отполировать edge/error states.
+2. Проверить Telegram notifications на тестовом чате; callback оставить optional.
+3. Подготовить threat model, demo runbook и презентацию с измеримыми результатами.

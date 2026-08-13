@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from pathlib import Path
 
@@ -53,10 +54,14 @@ async def test_github_provider_uses_shared_change_request_contract() -> None:
 
 @pytest.mark.asyncio
 async def test_gitlab_provider_uses_same_change_request_contract() -> None:
+    request_body = None
+
     def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_body
         if request.url.path.endswith("/repository/branches"):
             return httpx.Response(201, json={"name": "fix/incident-91"})
         assert request.url.path.endswith("/merge_requests")
+        request_body = request.read().decode()
         return httpx.Response(
             201, json={"iid": 13, "web_url": "https://gitlab.example/merge_requests/13"}
         )
@@ -80,6 +85,8 @@ async def test_gitlab_provider_uses_same_change_request_contract() -> None:
 
     assert result.platform is IncidentSource.GITLAB_CI
     assert result.external_id == "13"
+    assert request_body is not None
+    assert json.loads(request_body)["title"] == "Draft: Fix incident 91"
 
 
 @pytest.mark.asyncio

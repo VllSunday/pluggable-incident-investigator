@@ -1,0 +1,16 @@
+groups:
+  - name: runtime-demo
+    rules:
+      - alert: DemoHighErrorRate
+        expr: |
+          sum(rate(demo_http_errors_total{job="runtime-demo"}[30s]))
+          /
+          clamp_min(sum(rate(demo_http_requests_total{job="runtime-demo"}[30s])), 0.001)
+          > 0.5
+        for: 6s
+        labels:
+          severity: critical
+          service: runtime-demo
+        annotations:
+          summary: Runtime demo HTTP error rate is above 50%
+          description: The service is reachable but approximately 80% of requests fail.

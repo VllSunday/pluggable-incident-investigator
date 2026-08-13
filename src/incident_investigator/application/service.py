@@ -82,7 +82,7 @@ class InvestigationService:
             raise InvalidIncidentStateError(
                 f"Incident is '{record.status}', not awaiting approval"
             )
-        config = {"configurable": {"thread_id": str(record.incident_id)}}
+        config = self._graph_config(record)
         try:
             result = await self._graph.ainvoke(
                 Command(resume={"approved": approved}), config=config
@@ -102,7 +102,7 @@ class InvestigationService:
         record = await self._repository.claim_next()
         if record is None:
             return False
-        config = {"configurable": {"thread_id": str(record.incident_id)}}
+        config = self._graph_config(record)
         try:
             result = await self._graph.ainvoke(initial_state(record.event), config=config)
             await self._save_graph_result(record.incident_id, result)
@@ -114,6 +114,25 @@ class InvestigationService:
                 error=f"{type(error).__name__}: {error}",
             )
         return True
+
+    @staticmethod
+    def _graph_config(record: IncidentRecord) -> dict[str, Any]:
+        event = record.event
+        return {
+            "configurable": {"thread_id": str(record.incident_id)},
+            "tags": [
+                "incident-investigator",
+                f"source:{event.source.value}",
+                f"kind:{event.kind.value}",
+            ],
+            "metadata": {
+                "incident_id": str(record.incident_id),
+                "correlation_id": record.correlation_id,
+                "source": event.source.value,
+                "kind": event.kind.value,
+                "service": event.service,
+            },
+        }
 
     async def _worker(self) -> None:
         while not self._stop_event.is_set():
@@ -135,6 +154,7 @@ class InvestigationService:
             "no_safe_action",
             "recovery_failed",
             "remediation_blocked",
+            "evidence_budget_exhausted",
         }:
             status = IncidentStatus.ESCALATED
         elif graph_status == "action_rejected":

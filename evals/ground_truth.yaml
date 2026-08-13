@@ -1,0 +1,36 @@
+cases:
+  - name: runtime_high_error_ratio
+    match:
+      source: alertmanager
+      kind: runtime_alert
+      service: runtime-demo
+    required_evidence_kinds:
+      - event_metadata
+      - metric_snapshot
+    root_cause_any:
+      - application-level
+      - 80% of requests
+      - error ratio
+    allowed_graph_statuses:
+      - escalated
+    max_tool_calls: 12
+    require_no_action: true
+
+  - name: gitlab_retry_delay_off_by_one
+    match:
+      source: gitlab_ci
+      kind: ci_failure
+      service: AllSunday/incident-investigator-demo-ci
+    required_evidence_kinds:
+      - event_metadata
+      - ci_job_log
+      - commit_diff
+    root_cause_any:
+      - retry_delay
+      - off-by-one
+      - off by one
+    allowed_graph_statuses:
+      - action_proposed
+      - draft_change_created
+    max_tool_calls: 12
+    require_no_action: false
