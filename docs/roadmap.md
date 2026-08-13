@@ -47,6 +47,8 @@ Telegram callback остаётся отдельным transport enhancement.
 
 ## До завершённого capstone
 
-1. Провести browser-based QA двуязычного dashboard и отполировать edge/error states.
-2. Проверить Telegram notifications на тестовом чате; callback оставить optional.
-3. Подготовить threat model, demo runbook и презентацию с измеримыми результатами.
+Browser-based QA двуязычного dashboard завершён на desktop/mobile: language route,
+операторские budget notes и компактное представление metric evidence проверены.
+
+1. Проверить Telegram notifications на тестовом чате; callback оставить optional.
+2. Подготовить threat model, demo runbook и презентацию с измеримыми результатами.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from contextlib import suppress
 from datetime import datetime
 from html import escape
@@ -15,6 +16,7 @@ TEXT = {
         "eyebrow": "ОПЕРАЦИОННЫЙ КОНТУР",
         "subtitle": "Расследования, основанные на доказательствах",
         "queue": "Очередь инцидентов",
+        "filter": "Фильтр инцидентов",
         "all": "Все",
         "active": "Активные",
         "approval": "Ждут решения",
@@ -35,6 +37,7 @@ TEXT = {
         "result": "Результат",
         "received": "получен",
         "evidence_count": "источников",
+        "evidence_shown": "показано",
         "confidence": "уверенность",
         "verified": "проверена",
         "unverified": "нужна проверка",
@@ -63,6 +66,8 @@ TEXT = {
         "api_missing": "Не задан INVESTIGATOR_ADMIN_API_TOKEN для dashboard.",
         "retry": "Проверьте API URL, токен и состояние backend-контейнера.",
         "errors": "Ошибки расследования",
+        "notes": "Системные заметки",
+        "budget_truncated": "Лимит инструментов достигнут: ядро сохранило собранные данные и безопасно передало расследование человеку.",
         "language": "Язык",
     },
     "en": {
@@ -70,6 +75,7 @@ TEXT = {
         "eyebrow": "OPERATIONS CONTROL",
         "subtitle": "Evidence-led incident investigations",
         "queue": "Incident queue",
+        "filter": "Incident filter",
         "all": "All",
         "active": "Active",
         "approval": "Needs decision",
@@ -90,6 +96,7 @@ TEXT = {
         "result": "Outcome",
         "received": "received",
         "evidence_count": "sources",
+        "evidence_shown": "shown",
         "confidence": "confidence",
         "verified": "verified",
         "unverified": "needs verification",
@@ -118,6 +125,8 @@ TEXT = {
         "api_missing": "INVESTIGATOR_ADMIN_API_TOKEN is not configured for the dashboard.",
         "retry": "Check the API URL, token and backend container.",
         "errors": "Investigation errors",
+        "notes": "System notes",
+        "budget_truncated": "The tool limit was reached: the core preserved collected evidence and safely escalated the investigation.",
         "language": "Language",
     },
 }
@@ -148,7 +157,7 @@ def _css() -> str:
       linear-gradient(90deg, rgba(32,35,31,.035) 1px, transparent 1px) 0 0/32px 32px,
       linear-gradient(rgba(32,35,31,.025) 1px, transparent 1px) 0 0/32px 32px,
       var(--paper); color:var(--ink); }
-    header[data-testid="stHeader"] { background:transparent; }
+    header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stAppDeployButton"] { display:none!important; }
     #MainMenu, footer { visibility:hidden; }
     .block-container { max-width:1680px; padding:1.35rem 2rem 3rem; }
     html, body, [class*="css"] { font-family:"Segoe UI Variable","Aptos",system-ui,sans-serif; }
@@ -199,7 +208,7 @@ def _css() -> str:
     .evidence { display:grid;grid-template-columns:90px 1fr;gap:.8rem;padding:.75rem 0;border-top:1px solid var(--line); }
     .evidence:first-of-type { border-top:0; }
     .evidence-kind { font:650 .66rem ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--verm);text-transform:uppercase;overflow-wrap:anywhere; }
-    .evidence p { margin:0;font-size:.84rem;line-height:1.48; }
+    .evidence p { margin:0;font-size:.84rem;line-height:1.48;overflow-wrap:anywhere; }
     .hypothesis { border-top:1px solid var(--line);padding:.85rem 0 0;margin-top:.7rem; }
     .hypothesis:first-of-type { border-top:0;margin-top:0;padding-top:0; }
     .hyp-row { display:flex;gap:1rem;justify-content:space-between;align-items:flex-start; }
@@ -213,7 +222,7 @@ def _css() -> str:
     .action-grid { display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:1rem; }
     .datum { border-top:1px solid var(--line);padding-top:.55rem; }
     .datum b { display:block;font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:.25rem; }
-    .datum span { font-size:.79rem;line-height:1.4; }
+    .datum span { font-size:.79rem;line-height:1.4;overflow-wrap:anywhere; }
     .empty { min-height:58vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:3rem; }
     .empty-shape { width:72px;height:72px;border:1px solid var(--line);transform:rotate(45deg);position:relative;margin-bottom:2rem; }
     .empty-shape:before,.empty-shape:after { content:"";position:absolute;background:var(--line); }
@@ -228,7 +237,7 @@ def _css() -> str:
     div[data-testid="stSegmentedControl"] button { border-radius:0!important; }
     @keyframes breathe { 50% { box-shadow:0 0 0 7px rgba(201,71,53,.12); } }
     @media (prefers-reduced-motion:reduce) { * { animation:none!important;transition:none!important; } }
-    @media (max-width:900px) { .block-container{padding:1rem}.brand-sub{display:none}.lang-switch a{min-width:42px;padding:.5rem}.spine{padding-left:2.8rem}.fold-node{left:-2.55rem}.action-grid{grid-template-columns:1fr} }
+    @media (max-width:900px) { .block-container{padding:1rem}.brand-sub{display:none}.lang-switch a{min-width:42px;padding:.5rem}.spine{padding-left:2.8rem}.fold-node{left:-2.55rem}.action-grid{grid-template-columns:1fr}.evidence{grid-template-columns:72px 1fr;gap:.65rem} }
     </style>
     """
 
@@ -245,6 +254,54 @@ def _fmt_time(value: str | None, *, short: bool = False) -> str:
 
 def _source_label(source: str) -> str:
     return {"github_actions": "GitHub Actions", "gitlab_ci": "GitLab CI", "alertmanager": "Prometheus"}.get(source, source)
+
+
+def _visible_evidence(items: list[dict[str, Any]], *, limit: int = 10) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in reversed(items):
+        attributes = item.get("attributes") or {}
+        kind = str(item.get("kind", "source"))
+        identity = str(attributes.get("query_name") or item.get("summary", ""))
+        key = (kind, identity)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return list(reversed(unique[:limit]))
+
+
+def _evidence_label(item: dict[str, Any]) -> str:
+    attributes = item.get("attributes") or {}
+    return str(attributes.get("query_name") or item.get("kind", "source"))
+
+
+def _evidence_summary(item: dict[str, Any]) -> str:
+    summary = str(item.get("summary", ""))
+    attributes = item.get("attributes") or {}
+    query_name = attributes.get("query_name")
+    if not query_name:
+        return summary
+    try:
+        result = json.loads(summary).get("result", [])
+        if not result:
+            return f"{query_name}: no data"
+        sample = result[0]
+        value = float(sample["value"][1])
+        labels = sample.get("metric") or {}
+        context = " · ".join(
+            f"{key}={value}" for key, value in labels.items() if key != "__name__"
+        )
+        rendered_value = f"{value:.3f}".rstrip("0").rstrip(".")
+        return f"{query_name.replace('_', ' ')} = {rendered_value}{' · ' + context if context else ''}"
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return summary
+
+
+def _humanize_error(error: str, t: dict[str, str]) -> tuple[str, bool]:
+    if error == "budget:tool_call_budget_truncated":
+        return t["budget_truncated"], True
+    return error, error.startswith("budget:")
 
 
 def _status_html(status: str, language: str) -> str:
@@ -294,11 +351,15 @@ def _render_investigation(record: dict[str, Any], t: dict[str, str], language: s
     <div class="micro">{escape(str(event.get('kind','')).replace('_',' '))} · {escape(str(event.get('external_id','—')))}</div>"""
     folds = [_fold("01", t["signal"], signal_body, meta=_source_label(str(event.get("source", ""))))]
 
+    visible_evidence = _visible_evidence(evidence)
     evidence_body = "".join(
-        f"""<div class="evidence"><div class="evidence-kind">{escape(str(item.get('kind','source')))}</div>
-        <p>{escape(str(item.get('summary','')))}</p></div>""" for item in evidence
+        f"""<div class="evidence"><div class="evidence-kind">{escape(_evidence_label(item))}</div>
+        <p>{escape(_evidence_summary(item))}</p></div>""" for item in visible_evidence
     ) or f'<p class="micro">{escape(t["no_incidents_hint"])}</p>'
-    folds.append(_fold("02", t["evidence"], evidence_body, meta=f"{len(evidence)} {t['evidence_count']}", active=status == "running"))
+    evidence_meta = f"{len(evidence)} {t['evidence_count']}"
+    if len(visible_evidence) < len(evidence):
+        evidence_meta = f"{t['evidence_shown']} {len(visible_evidence)} / {len(evidence)}"
+    folds.append(_fold("02", t["evidence"], evidence_body, meta=evidence_meta, active=status == "running"))
 
     hypothesis_body = ""
     for item in hypotheses:
@@ -383,7 +444,7 @@ def main() -> None:
     st.markdown(
         f"""<div class="topbar"><div class="brand"><div class="brand-mark"></div><div><div class="eyebrow">{t['eyebrow']}</div>
         <div class="brand-title">{t['app']}</div><div class="brand-sub">{t['subtitle']}</div></div></div>
-        <nav class="lang-switch" aria-label="Language / Язык"><a class="{ru_class}" href="?lang=ru">RU</a><a class="{en_class}" href="?lang=en">EN</a></nav></div>""",
+        <nav class="lang-switch" aria-label="Language / Язык"><a class="{ru_class}" href="/?lang=ru" target="_self">RU</a><a class="{en_class}" href="/?lang=en" target="_self">EN</a></nav></div>""",
         unsafe_allow_html=True,
     )
 
@@ -407,7 +468,7 @@ def main() -> None:
         st.markdown(f'<div class="connection{state_class}"><i></i>{t["connected"] if online else t["offline"]}</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="section-label">{t["queue"]} · {len(incidents):02d}</div>', unsafe_allow_html=True)
         filter_value = st.selectbox(
-            "Filter",
+            t["filter"],
             [t["all"], t["active"], t["approval"], t["resolved"]],
             label_visibility="collapsed",
         )
@@ -451,13 +512,19 @@ def main() -> None:
                        (t["updated"], _fmt_time(selected.get("updated_at"))), (t["correlation"], str(selected.get("correlation_id", "—")))]
             for label, value in details:
                 st.markdown(f'<div class="datum"><b>{escape(label)}</b><span>{escape(value)}</span></div>', unsafe_allow_html=True)
-            errors = (selected.get("state") or {}).get("errors") or []
+            errors = list((selected.get("state") or {}).get("errors") or [])
             if selected.get("error"):
                 errors.append(selected["error"])
             if errors:
-                st.markdown(f'<div class="section-label">{t["errors"]}</div>', unsafe_allow_html=True)
-                for error in errors:
-                    st.error(str(error))
+                rendered_errors = [_humanize_error(str(error), t) for error in errors]
+                only_notes = all(is_note for _, is_note in rendered_errors)
+                heading = t["notes"] if only_notes else t["errors"]
+                st.markdown(f'<div class="section-label">{heading}</div>', unsafe_allow_html=True)
+                for message, is_note in rendered_errors:
+                    if is_note:
+                        st.warning(message)
+                    else:
+                        st.error(message)
 
 
 if __name__ == "__main__":
