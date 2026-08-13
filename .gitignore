@@ -10,3 +10,6 @@ __pycache__/
 .langgraph_api/
 htmlcov/
 .coverage
+.codex-tmp/
+docs/capstone-defense/
+docs/*.pptx.inspect.ndjson

@@ -56,6 +56,9 @@ uv run streamlit run src/incident_investigator/ui/app.py
 
 Инструкции локальной и серверной установки: [`docs/deployment.md`](docs/deployment.md).
 Настройка traces и ground-truth eval: [`docs/observability.md`](docs/observability.md).
+Сценарий защиты: [`docs/demo-runbook.md`](docs/demo-runbook.md). Границы безопасности:
+[`docs/threat-model.md`](docs/threat-model.md).
+Готовая презентация: [`docs/capstone-defense.pptx`](docs/capstone-defense.pptx).
 
 ## Safe remediation
 

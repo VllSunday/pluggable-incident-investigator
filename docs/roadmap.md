@@ -51,4 +51,6 @@ Browser-based QA двуязычного dashboard завершён на desktop/
 операторские budget notes и компактное представление metric evidence проверены.
 
 1. Проверить Telegram notifications на тестовом чате; callback оставить optional.
-2. Подготовить threat model, demo runbook и презентацию с измеримыми результатами.
+2. Credential-dependent smoke tests: Telegram test chat и LangSmith cloud trace.
+
+Threat model, demo runbook и проверенная презентация с измеримыми результатами готовы.
