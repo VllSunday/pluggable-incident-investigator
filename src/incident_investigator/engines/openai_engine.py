@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,7 @@ from incident_investigator.domain import (
     Hypothesis,
     IncidentEvent,
     ReflectionDecision,
+    ReflectionOutcome,
     RiskLevel,
 )
 
@@ -45,7 +47,7 @@ class ActionDecision(BaseModel):
     should_act: bool
     tool_name: str
     description: str
-    arguments: dict[str, str | int | float | bool]
+    arguments: RemediationRequest | None
     risk: RiskLevel
     rollback_plan: str
     expected_outcome: str
@@ -68,33 +70,86 @@ class OpenAIInvestigationEngine:
 
     async def generate_hypotheses(self, incident: IncidentEvent, evidence):
         payload = self._context(incident, evidence)
-        batch = await self._parse(
-            HypothesisBatch,
-            "Generate up to three competing root-cause hypotheses. Mark verified=true only "
-            "when direct evidence confirms the causal claim.",
-            payload,
-        )
         valid_ids = {item.evidence_id for item in evidence}
+        task = (
+            "Generate up to three competing root-cause hypotheses. Mark verified=true only "
+            "when direct evidence confirms the causal claim. For CI failures, an exact "
+            "observed-versus-expected assertion together with the implementation expression "
+            "that produces the observed value is direct causal evidence. Cite only evidence "
+            "IDs present in the input."
+        )
+        batch = None
+        for attempt in range(2):
+            batch = await self._parse(HypothesisBatch, task, payload)
+            cited = {
+                evidence_id
+                for candidate in batch.hypotheses
+                for evidence_id in (
+                    candidate.supporting_evidence_ids
+                    + candidate.contradicting_evidence_ids
+                )
+            }
+            unknown = cited - valid_ids
+            if not unknown:
+                break
+            if attempt == 1:
+                raise ValueError("Model cited evidence IDs that were not supplied")
+            payload["previous_candidate_error"] = (
+                "Unknown evidence IDs were cited. Use only these IDs: "
+                + ", ".join(sorted(str(item) for item in valid_ids))
+            )
+            payload["previous_candidate"] = batch.model_dump(mode="json")
+        assert batch is not None
+        evidence_kinds = {item.evidence_id: item.kind for item in evidence}
         hypotheses: list[Hypothesis] = []
         for candidate in batch.hypotheses:
             cited = set(candidate.supporting_evidence_ids) | set(
                 candidate.contradicting_evidence_ids
             )
-            if not cited.issubset(valid_ids):
-                raise ValueError("Model cited evidence IDs that were not supplied")
-            hypotheses.append(Hypothesis.model_validate(candidate.model_dump()))
+            supporting_kinds = {
+                evidence_kinds[item] for item in candidate.supporting_evidence_ids
+            }
+            quorum_verified = (
+                candidate.confidence >= 0.95
+                and not candidate.contradicting_evidence_ids
+                and {"ci_job_log", "commit_diff"}.issubset(supporting_kinds)
+            )
+            hypotheses.append(
+                Hypothesis.model_validate(
+                    {
+                        **candidate.model_dump(),
+                        "verified": candidate.verified or quorum_verified,
+                    }
+                )
+            )
         return hypotheses
 
     async def reflect(self, incident: IncidentEvent, evidence, hypotheses):
         payload = self._context(incident, evidence)
         payload["hypotheses"] = [item.model_dump(mode="json") for item in hypotheses]
-        return await self._parse(
+        decision = await self._parse(
             ReflectionDecision,
             "Critique the hypotheses. Choose gather_more when decisive evidence is missing, "
             "ready_for_action only for a verified cause, or escalate when safe autonomous "
             "progress is impossible.",
             payload,
         )
+        if (
+            decision.outcome is ReflectionOutcome.READY_FOR_ACTION
+            and not any(item.verified for item in hypotheses)
+        ):
+            return ReflectionDecision(
+                outcome=ReflectionOutcome.GATHER_MORE,
+                critique=(
+                    "Action readiness contradicted the absence of a verified hypothesis; "
+                    "re-evaluate verification against the existing direct evidence"
+                ),
+                additional_evidence_requests=(
+                    "Re-check whether exact failing outputs and source code directly prove "
+                    "the leading causal hypothesis",
+                ),
+            )
+        return decision
 
     async def propose_action(self, incident: IncidentEvent, evidence, hypotheses):
         verified = [item for item in hypotheses if item.verified]
@@ -104,27 +159,45 @@ class OpenAIInvestigationEngine:
         payload["verified_hypotheses"] = [
             item.model_dump(mode="json") for item in verified
         ]
-        decision = await self._parse(
-            ActionDecision,
+        task = (
             "Propose one minimal reversible action. Set should_act=false when no registered "
             "safe action can address the verified cause. Use only tool names described in "
             "the incident metadata allowed_actions field. For prepare_draft_change, arguments "
             "must contain repository, source_revision, target_branch, branch_name beginning "
             "with incident-fix/ followed by the incident external_id, title, description, "
             "unified_diff, and check_profile. Copy source_revision, target_branch and an "
-            "allowed check_profile exactly from incident metadata. The "
-            "unified diff must be minimal and may only use repository-relative paths.",
-            payload,
+            "allowed check_profile exactly from incident metadata. The unified diff must be "
+            "minimal, use exact repository-relative paths from evidence, and contain an "
+            "effective code change: removed and added lines must not be identical."
         )
-        if not decision.should_act:
-            return None
+        decision = None
+        arguments = None
+        for attempt in range(2):
+            decision = await self._parse(ActionDecision, task, payload)
+            if not decision.should_act:
+                return None
+            if decision.arguments is None:
+                validation_error = "action is missing remediation arguments"
+            else:
+                arguments = decision.arguments.model_dump(mode="json")
+                arguments["unified_diff"] = _align_diff_paths(
+                    arguments["unified_diff"], evidence
+                )
+                validation_error = _diff_validation_error(arguments["unified_diff"])
+            if validation_error is None:
+                break
+            if attempt == 1:
+                raise ValueError(f"Model remediation remained invalid: {validation_error}")
+            payload["previous_candidate_error"] = validation_error
+            payload["previous_candidate"] = decision.model_dump(mode="json")
+        assert decision is not None and arguments is not None
         allowed_actions = incident.metadata.get("allowed_actions", [])
         if decision.tool_name not in allowed_actions:
             raise ValueError(f"Model proposed unregistered tool '{decision.tool_name}'")
         return ActionProposal(
             tool_name=decision.tool_name,
             description=decision.description,
-            arguments=decision.arguments,
+            arguments=arguments,
             risk=decision.risk,
             idempotency_key=f"{incident.incident_id}:{decision.tool_name}",
             rollback_plan=decision.rollback_plan,
@@ -154,6 +227,55 @@ class OpenAIInvestigationEngine:
             "incident": incident.model_dump(mode="json"),
             "evidence": [item.model_dump(mode="json") for item in evidence],
         }
+
+
+_DIFF_HEADER = re.compile(r"^(?P<marker>---|\+\+\+) (?P<prefix>[ab]/)?(?P<path>.+)$", re.MULTILINE)
+
+
+def _align_diff_paths(diff: str, evidence: list[EvidenceItem]) -> str:
+    repository_paths: set[str] = set()
+    for item in evidence:
+        if item.kind != "commit_diff":
+            continue
+        repository_paths.update(
+            str(path) for path in item.attributes.get("changed_files", [])
+        )
+        repository_paths.update(
+            match["path"]
+            for match in _DIFF_HEADER.finditer(item.summary)
+            if match["path"] != "/dev/null"
+        )
+
+    def replace(match: re.Match[str]) -> str:
+        path = match["path"]
+        if path == "/dev/null" or path in repository_paths:
+            return match.group(0)
+        candidates = [item for item in repository_paths if item.endswith(f"/{path}")]
+        if len(candidates) != 1:
+            return match.group(0)
+        return f"{match['marker']} {match['prefix'] or ''}{candidates[0]}"
+
+    return _DIFF_HEADER.sub(replace, diff)
+
+
+def _diff_validation_error(diff: str) -> str | None:
+    removed = [
+        line[1:]
+        for line in diff.splitlines()
+        if line.startswith("-") and not line.startswith("--- ")
+    ]
+    added = [
+        line[1:]
+        for line in diff.splitlines()
+        if line.startswith("+") and not line.startswith("+++ ")
+    ]
+    if not removed and not added:
+        return "unified diff contains no changed lines"
+    compact_removed = [re.sub(r"\s+", "", line) for line in removed]
+    compact_added = [re.sub(r"\s+", "", line) for line in added]
+    if compact_removed == compact_added:
+        return "unified diff removes and adds identical lines"
+    return None
 
 
 class OpenAIRemediationReviewer:

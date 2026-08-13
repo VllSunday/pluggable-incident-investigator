@@ -126,6 +126,9 @@ class RemediationPipeline:
         self, incident: IncidentEvent, proposal: ActionProposal
     ) -> ActionProposal:
         request = RemediationRequest.model_validate(proposal.arguments)
+        normalized_diff = _normalize_hunk_counts(request.unified_diff)
+        if normalized_diff != request.unified_diff:
+            request = request.model_copy(update={"unified_diff": normalized_diff})
         self._validate_request(incident, request)
         self._validate_paths(_changed_paths(request.unified_diff))
         self._workspace_root.mkdir(parents=True, exist_ok=True)
@@ -339,6 +342,36 @@ class DeterministicRemediationReviewer:
 
 
 _DIFF_PATH = re.compile(r"^(?:---|\+\+\+) (?:[ab]/)?(.+)$", re.MULTILINE)
+_HUNK_HEADER = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,\d+)? \+(?P<new_start>\d+)(?:,\d+)? @@(?P<suffix>.*)$"
+)
+
+
+def _normalize_hunk_counts(diff: str) -> str:
+    lines = diff.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        header = line.rstrip("\r\n")
+        match = _HUNK_HEADER.match(header)
+        if match is None:
+            continue
+        old_count = 0
+        new_count = 0
+        for body_line in lines[index + 1 :]:
+            if body_line.startswith("@@ ") or body_line.startswith("--- "):
+                break
+            marker = body_line[:1]
+            if marker == "\\":
+                continue
+            if marker not in {" ", "+", "-"}:
+                break
+            old_count += marker in {" ", "-"}
+            new_count += marker in {" ", "+"}
+        newline = line[len(header) :]
+        lines[index] = (
+            f"@@ -{match['old_start']},{old_count} "
+            f"+{match['new_start']},{new_count} @@{match['suffix']}{newline}"
+        )
+    return "".join(lines)
 
 
 def _changed_paths(diff: str) -> tuple[str, ...]:
@@ -390,6 +423,8 @@ def _summarize_request(request: RemediationRequest) -> RemediationRequestSummary
 
 
 async def _apply_patch(workspace: Path, diff: str) -> None:
+    diff = _align_source_lines_with_workspace(workspace, diff)
+    diff = _align_hunk_locations_with_workspace(workspace, diff)
     for check_only in (True, False):
         arguments = ["git", "apply", "--whitespace=error"]
         if check_only:
@@ -405,6 +440,83 @@ async def _apply_patch(workspace: Path, diff: str) -> None:
         if process.returncode != 0:
             message = output.decode(errors="replace")[-2000:]
             raise RemediationBlockedError(f"Patch validation failed: {message}")
+
+
+def _align_source_lines_with_workspace(workspace: Path, diff: str) -> str:
+    lines = diff.splitlines(keepends=True)
+    current_path: str | None = None
+    source_lines: list[str] = []
+    in_hunk = False
+    for index, line in enumerate(lines):
+        if line.startswith("+++ b/"):
+            current_path = line.removeprefix("+++ b/").rstrip("\r\n")
+            target = workspace / current_path
+            source_lines = target.read_text(encoding="utf-8").splitlines()
+            in_hunk = False
+            continue
+        if line.startswith("@@ "):
+            in_hunk = True
+            continue
+        marker = line[:1]
+        if current_path is None or not in_hunk or marker not in {" ", "-"}:
+            continue
+        source_line = line[1:].rstrip("\r\n")
+        compact = re.sub(r"\s+", "", source_line)
+        candidates = [item for item in source_lines if re.sub(r"\s+", "", item) == compact]
+        if len(candidates) != 1:
+            continue
+        newline = line[len(line.rstrip("\r\n")) :]
+        lines[index] = f"{marker}{candidates[0]}{newline}"
+    return "".join(lines)
+
+
+def _align_hunk_locations_with_workspace(workspace: Path, diff: str) -> str:
+    lines = diff.splitlines(keepends=True)
+    source_lines: list[str] = []
+    for index, line in enumerate(lines):
+        if line.startswith("+++ b/"):
+            path = line.removeprefix("+++ b/").rstrip("\r\n")
+            source_lines = (workspace / path).read_text(encoding="utf-8").splitlines()
+            continue
+        header = line.rstrip("\r\n")
+        match = _HUNK_HEADER.match(header)
+        if match is None or not source_lines:
+            continue
+        body_end = index + 1
+        old_lines: list[str] = []
+        new_count = 0
+        while body_end < len(lines):
+            body_line = lines[body_end]
+            if body_line.startswith("@@ ") or body_line.startswith("--- "):
+                break
+            marker = body_line[:1]
+            if marker == "\\":
+                body_end += 1
+                continue
+            if marker not in {" ", "+", "-"}:
+                break
+            content = body_line[1:].rstrip("\r\n")
+            if marker in {" ", "-"}:
+                old_lines.append(content)
+            if marker in {" ", "+"}:
+                new_count += 1
+            body_end += 1
+        if not old_lines:
+            continue
+        locations = [
+            offset
+            for offset in range(len(source_lines) - len(old_lines) + 1)
+            if source_lines[offset : offset + len(old_lines)] == old_lines
+        ]
+        if len(locations) != 1:
+            continue
+        start = locations[0] + 1
+        newline = line[len(header) :]
+        lines[index] = (
+            f"@@ -{start},{len(old_lines)} +{start},{new_count} "
+            f"@@{match['suffix']}{newline}"
+        )
+    return "".join(lines)
 
 
 async def _remove_workspace(path: Path) -> None:

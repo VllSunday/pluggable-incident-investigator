@@ -88,19 +88,28 @@ class GitHubCIEvidenceProvider:
             commit_response = await self._client.get(f"/repos/{repository}/commits/{sha}")
             commit_response.raise_for_status()
             commit = commit_response.json()
-            patches = "\n\n".join(
-                f"--- {item.get('filename')}\n{item.get('patch', '[binary or unavailable]')}"
-                for item in commit.get("files", [])
-            )
-            evidence.append(
-                EvidenceItem(
-                    kind="commit_diff",
-                    source_uri=str(commit.get("html_url") or f"github://commit/{sha}"),
-                    summary=_excerpt(patches, self._max_log_characters),
-                    content_hash=_hash(patches),
-                    attributes={"platform": "github", "sha": sha},
+            commit_uri = str(commit.get("html_url") or f"github://commit/{sha}")
+            for item in commit.get("files", []):
+                filename = item.get("filename")
+                if not filename:
+                    continue
+                patch = (
+                    f"--- a/{filename}\n+++ b/{filename}\n"
+                    f"{item.get('patch', '[binary or unavailable]')}"
                 )
-            )
+                evidence.append(
+                    EvidenceItem(
+                        kind="commit_diff",
+                        source_uri=f"{commit_uri}#{filename}",
+                        summary=_excerpt(patch, self._max_log_characters),
+                        content_hash=_hash(patch),
+                        attributes={
+                            "platform": "github",
+                            "sha": sha,
+                            "changed_files": [filename],
+                        },
+                    )
+                )
         return evidence
 
 
@@ -153,16 +162,26 @@ class GitLabCIEvidenceProvider:
             )
             diff_response.raise_for_status()
             diffs: list[dict[str, Any]] = diff_response.json()
-            patches = "\n\n".join(
-                f"--- {item.get('new_path')}\n{item.get('diff', '[unavailable]')}" for item in diffs
-            )
-            evidence.append(
-                EvidenceItem(
-                    kind="commit_diff",
-                    source_uri=f"gitlab://{incident.service}/commit/{sha}",
-                    summary=_excerpt(patches, self._max_log_characters),
-                    content_hash=_hash(patches),
-                    attributes={"platform": "gitlab", "sha": sha},
+            commit_uri = f"gitlab://{incident.service}/commit/{sha}"
+            for item in diffs:
+                filename = item.get("new_path")
+                if not filename:
+                    continue
+                patch = (
+                    f"--- a/{filename}\n+++ b/{filename}\n"
+                    f"{item.get('diff', '[unavailable]')}"
                 )
-            )
+                evidence.append(
+                    EvidenceItem(
+                        kind="commit_diff",
+                        source_uri=f"{commit_uri}#{filename}",
+                        summary=_excerpt(patch, self._max_log_characters),
+                        content_hash=_hash(patch),
+                        attributes={
+                            "platform": "gitlab",
+                            "sha": sha,
+                            "changed_files": [filename],
+                        },
+                    )
+                )
         return evidence

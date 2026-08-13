@@ -142,6 +142,17 @@ async def run(args: argparse.Namespace) -> int:
         )
         if not paused.get("__interrupt__"):
             print(f"Investigation stopped with status: {paused.get('status')}")
+            for hypothesis in paused.get("hypotheses", []):
+                print(
+                    f"- hypothesis ({hypothesis['confidence']:.2f}, "
+                    f"verified={hypothesis['verified']}): {hypothesis['statement']}"
+                )
+            reflection = paused.get("reflection")
+            if reflection:
+                print(
+                    f"- reflection: {reflection['outcome']}: "
+                    f"{reflection['critique']}"
+                )
             for error in paused.get("errors", []):
                 print(f"- {error}")
             return 2

@@ -17,6 +17,7 @@ from incident_investigator.core.remediation import (
     RemediationBlockedError,
     RemediationPipeline,
     RemediationReview,
+    _apply_patch,
 )
 from incident_investigator.core.runtime import SafeActionRunner
 from incident_investigator.core.scm import ChangeRequestResult, PreparedChangeSpec
@@ -153,6 +154,51 @@ async def test_pipeline_prepares_then_publishes_approved_report(tmp_path: Path) 
     assert result.external_reference == "https://github.test/acme/repo/pull/42"
     assert provider.published is not None
     assert "Automated safety report" in provider.published.description
+
+
+@pytest.mark.asyncio
+async def test_pipeline_normalizes_llm_hunk_counts_before_git_apply(
+    tmp_path: Path,
+) -> None:
+    malformed = PATCH.replace("@@ -1 +1 @@", "@@ -1,9 +1,7 @@")
+    event = incident()
+    pipeline = RemediationPipeline(
+        {IncidentSource.GITHUB_ACTIONS.value: FakeSourceControl()},
+        FakeSandbox(),
+        FakeReviewer(),
+        tmp_path,
+    )
+
+    staged = await pipeline.stage(event, proposal(malformed))
+    report = await pipeline.prepare(event, staged)
+
+    assert report.changes[0].path == "app.py"
+    assert report.checks[0].exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_patch_matching_tolerates_llm_spacing_in_old_line(tmp_path: Path) -> None:
+    source = tmp_path / "retry_policy.py"
+    source.write_text(
+        "if attempt < 1:\n"
+        "    raise ValueError(\"attempt must be at least 1\")\n"
+        "return min(base * (2**attempt), maximum)\n",
+        encoding="utf-8",
+    )
+    patch = """--- a/retry_policy.py
++++ b/retry_policy.py
+@@ -1 +1 @@
+-return min(base * (2 ** attempt), maximum)
++return min(base * (2 ** (attempt - 1)), maximum)
+"""
+
+    await _apply_patch(tmp_path, patch)
+
+    assert source.read_text(encoding="utf-8") == (
+        "if attempt < 1:\n"
+        "    raise ValueError(\"attempt must be at least 1\")\n"
+        "return min(base * (2 ** (attempt - 1)), maximum)\n"
+    )
 
 
 @pytest.mark.asyncio
