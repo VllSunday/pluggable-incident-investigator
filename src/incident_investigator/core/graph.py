@@ -221,8 +221,9 @@ def build_investigation_graph(
                 "errors": [*state.get("errors", []), "remediation:not_configured"],
             }
         try:
+            proposal = ActionProposal.model_validate(state["proposed_action"])
             report = await services.remediation_pipeline.prepare(
-                _incident(state), ActionProposal.model_validate(state["proposed_action"])
+                _incident(state), proposal
             )
         except RemediationBlockedError as error:
             return {
@@ -230,6 +231,14 @@ def build_investigation_graph(
                 "errors": [*state.get("errors", []), f"remediation:{error}"],
             }
         return {
+            "proposed_action": proposal.model_copy(
+                update={
+                    "arguments": {
+                        **report.request.model_dump(mode="json"),
+                        "patch_sha256": report.patch_sha256,
+                    }
+                }
+            ).model_dump(mode="json"),
             "remediation_report": report.model_dump(mode="json"),
             "status": "remediation_prepared",
         }

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from incident_investigator.core.remediation import RemediationRequest
+from incident_investigator.core.remediation import PatchRepairSnapshot, RemediationRequest
 from incident_investigator.domain import (
     EvidenceItem,
     IncidentEvent,
@@ -20,6 +20,9 @@ from incident_investigator.engines.openai_engine import (
     HypothesisBatch,
     HypothesisCandidate,
     OpenAIInvestigationEngine,
+    OpenAIPatchRepairer,
+    PatchEdit,
+    RepairedPatch,
 )
 
 
@@ -87,7 +90,7 @@ async def test_engine_maps_structured_hypothesis_and_reflection() -> None:
 
 
 @pytest.mark.asyncio
-async def test_engine_rejects_unknown_evidence_citation() -> None:
+async def test_engine_drops_unknown_evidence_citation_and_unverifies_claim() -> None:
     evidence = EvidenceItem(kind="log", source_uri="memory://log", summary="failure")
     other = EvidenceItem(kind="log", source_uri="memory://other", summary="other")
     engine = OpenAIInvestigationEngine(
@@ -121,8 +124,10 @@ async def test_engine_rejects_unknown_evidence_citation() -> None:
         )
     )
 
-    with pytest.raises(ValueError, match="not supplied"):
-        await engine.generate_hypotheses(incident(), [evidence])
+    hypotheses = await engine.generate_hypotheses(incident(), [evidence])
+
+    assert hypotheses[0].supporting_evidence_ids == []
+    assert hypotheses[0].verified is False
 
 
 @pytest.mark.asyncio
@@ -319,3 +324,36 @@ async def test_engine_reflects_once_on_noop_patch() -> None:
 
     assert proposal is not None
     assert "+new" in proposal.arguments["unified_diff"]
+
+
+@pytest.mark.asyncio
+async def test_openai_patch_repairer_returns_structured_diff() -> None:
+    repaired = "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old\n+new\n"
+    repairer = OpenAIPatchRepairer(
+        FakeClient(
+            [
+                RepairedPatch(
+                    edits=[PatchEdit(path="app.py", old_text="old", new_text="new")]
+                )
+            ]
+        )
+    )
+    request = RemediationRequest(
+        repository="acme/repo",
+        source_revision="abc123",
+        target_branch="main",
+        branch_name="incident-fix/42",
+        title="Fix application",
+        description="Fix verified regression.",
+        unified_diff="--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-missing\n+new\n",
+        check_profile="python",
+    )
+
+    result = await repairer.repair(
+        incident(),
+        request,
+        "Patch validation failed",
+        [PatchRepairSnapshot(path="app.py", content="old\n")],
+    )
+
+    assert result == repaired

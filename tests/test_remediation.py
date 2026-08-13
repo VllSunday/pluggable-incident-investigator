@@ -95,6 +95,20 @@ class FakeReviewer:
         )
 
 
+class FakeRepairer:
+    def __init__(self, repaired_patch: str) -> None:
+        self.repaired_patch = repaired_patch
+        self.calls = 0
+        self.snapshots = ()
+
+    async def repair(self, incident, request, error, snapshots):
+        del incident, request
+        assert "patch" in error.lower()
+        self.calls += 1
+        self.snapshots = snapshots
+        return self.repaired_patch
+
+
 def incident() -> IncidentEvent:
     return IncidentEvent(
         source=IncidentSource.GITHUB_ACTIONS,
@@ -174,6 +188,62 @@ async def test_pipeline_normalizes_llm_hunk_counts_before_git_apply(
 
     assert report.changes[0].path == "app.py"
     assert report.checks[0].exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_repairs_patch_once_and_rebinds_report_hash(
+    tmp_path: Path,
+) -> None:
+    malformed = PATCH.replace("-BROKEN = True", "-MISSING = True")
+    repairer = FakeRepairer(PATCH)
+    event = incident()
+    provider = FakeSourceControl()
+    pipeline = RemediationPipeline(
+        {IncidentSource.GITHUB_ACTIONS.value: provider},
+        FakeSandbox(),
+        FakeReviewer(),
+        tmp_path,
+        repairer=repairer,
+    )
+
+    staged = await pipeline.stage(event, proposal(malformed))
+    report = await pipeline.prepare(event, staged)
+    rebound = staged.model_copy(
+        update={
+            "arguments": {
+                **report.request.model_dump(mode="json"),
+                "patch_sha256": report.patch_sha256,
+            }
+        }
+    )
+    result = await pipeline.publish(event, rebound, report)
+
+    assert repairer.calls == 1
+    assert repairer.snapshots[0].path == "app.py"
+    assert repairer.snapshots[0].content == "BROKEN = True\n"
+    assert result.external_reference.endswith("/pull/42")
+
+
+@pytest.mark.asyncio
+async def test_pipeline_blocks_second_invalid_patch_without_another_repair(
+    tmp_path: Path,
+) -> None:
+    malformed = PATCH.replace("-BROKEN = True", "-MISSING = True")
+    repairer = FakeRepairer(malformed)
+    event = incident()
+    pipeline = RemediationPipeline(
+        {IncidentSource.GITHUB_ACTIONS.value: FakeSourceControl()},
+        FakeSandbox(),
+        FakeReviewer(),
+        tmp_path,
+        repairer=repairer,
+    )
+
+    with pytest.raises(RemediationBlockedError, match="Patch validation failed"):
+        staged = await pipeline.stage(event, proposal(malformed))
+        await pipeline.prepare(event, staged)
+
+    assert repairer.calls == 1
 
 
 @pytest.mark.asyncio
@@ -295,6 +365,12 @@ class RemediationEngine:
         return proposal()
 
 
+class BrokenPatchRemediationEngine(RemediationEngine):
+    async def propose_action(self, incident, evidence, hypotheses):
+        del incident, evidence, hypotheses
+        return proposal(PATCH.replace("-BROKEN = True", "-MISSING = True"))
+
+
 class NoopRecovery:
     async def verify(self, incident, action_result):
         del incident, action_result
@@ -366,3 +442,37 @@ async def test_graph_rejection_discards_prepared_workspace(tmp_path: Path) -> No
     assert rejected["status"] == "action_rejected"
     assert not (tmp_path / str(event.incident_id)).exists()
     assert not (tmp_path / f"{event.incident_id}.patch").exists()
+
+
+@pytest.mark.asyncio
+async def test_graph_binds_repaired_patch_hash_before_hitl(tmp_path: Path) -> None:
+    provider = FakeSourceControl()
+    repairer = FakeRepairer(PATCH)
+    pipeline = RemediationPipeline(
+        {IncidentSource.GITHUB_ACTIONS.value: provider},
+        FakeSandbox(),
+        FakeReviewer(),
+        tmp_path,
+        repairer=repairer,
+    )
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(FakeEvidenceProvider(),),
+            engine=BrokenPatchRemediationEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner({}),
+            recovery_verifier=NoopRecovery(),
+            remediation_pipeline=pipeline,
+        )
+    )
+    config = {"configurable": {"thread_id": "remediation-repaired"}}
+
+    paused = await graph.ainvoke(initial_state(incident()), config=config)
+
+    assert repairer.calls == 1
+    assert (
+        paused["proposed_action"]["arguments"]["patch_sha256"]
+        == paused["remediation_report"]["patch_sha256"]
+    )
+    completed = await graph.ainvoke(Command(resume={"approved": True}), config=config)
+    assert completed["status"] == "draft_change_created"

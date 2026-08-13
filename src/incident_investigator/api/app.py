@@ -38,6 +38,7 @@ from incident_investigator.demo import (
 from incident_investigator.domain import IncidentEvent
 from incident_investigator.engines import (
     OpenAIInvestigationEngine,
+    OpenAIPatchRepairer,
     OpenAIRemediationReviewer,
 )
 from incident_investigator.settings import Settings
@@ -154,9 +155,13 @@ async def lifespan(app):
             remediation_reviewer = OpenAIRemediationReviewer(
                 llm_client, model=settings.openai_model
             )
+            remediation_repairer = OpenAIPatchRepairer(
+                llm_client, model=settings.openai_model
+            )
         else:
             engine = DemoInvestigationEngine()
             remediation_reviewer = None
+            remediation_repairer = None
 
         remediation_pipeline = None
         if settings.remediation_enabled:
@@ -172,6 +177,7 @@ async def lifespan(app):
                 ),
                 remediation_reviewer,
                 settings.remediation_workspace_path,
+                repairer=remediation_repairer,
             )
 
         graph = build_investigation_graph(

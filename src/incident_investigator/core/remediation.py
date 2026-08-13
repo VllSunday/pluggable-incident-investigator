@@ -63,6 +63,13 @@ class RemediationReview(BaseModel):
     risks: tuple[str, ...] = ()
 
 
+class PatchRepairSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    path: str
+    content: str | None
+
+
 class RemediationFileSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -92,6 +99,16 @@ class RemediationReviewer(Protocol):
     ) -> RemediationReview: ...
 
 
+class RemediationPatchRepairer(Protocol):
+    async def repair(
+        self,
+        incident: IncidentEvent,
+        request: RemediationRequest,
+        error: str,
+        snapshots: Sequence[PatchRepairSnapshot],
+    ) -> str: ...
+
+
 class SandboxRunner(Protocol):
     async def run_profile(self, profile: str, workspace: Path) -> Sequence[CheckResult]: ...
 
@@ -106,6 +123,7 @@ class RemediationPipeline:
         reviewer: RemediationReviewer,
         workspace_root: Path,
         *,
+        repairer: RemediationPatchRepairer | None = None,
         forbidden_paths: tuple[str, ...] = (
             ".git/",
             ".env",
@@ -118,6 +136,7 @@ class RemediationPipeline:
         self._providers = dict(providers)
         self._sandbox = sandbox
         self._reviewer = reviewer
+        self._repairer = repairer
         self._workspace_root = workspace_root
         self._forbidden_paths = forbidden_paths
         self._max_changed_files = max_changed_files
@@ -166,17 +185,45 @@ class RemediationPipeline:
             raise
         before = {path: _read_optional_text(workspace / path) for path in paths}
         try:
-            await _apply_patch(workspace, request.unified_diff)
-            changes = tuple(
-                FileChange(
-                    path=path,
-                    content=_read_optional_text(workspace / path),
-                    previous_exists=before[path] is not None,
+            try:
+                changes = await _apply_and_collect_changes(
+                    workspace, request.unified_diff, before
                 )
-                for path in paths
-            )
-            if all(item.content == before[item.path] for item in changes):
-                raise RemediationBlockedError("Patch produced no file changes")
+            except RemediationBlockedError as error:
+                if self._repairer is None:
+                    raise
+                repaired_diff = await self._repairer.repair(
+                    incident,
+                    request,
+                    str(error),
+                    _repair_snapshots(before),
+                )
+                repaired_diff = _normalize_hunk_counts(repaired_diff)
+                repaired_paths = _changed_paths(repaired_diff)
+                self._validate_paths(repaired_paths)
+                if set(repaired_paths) != set(paths):
+                    raise RemediationBlockedError(
+                        "Patch repair changed the approved file scope"
+                    ) from error
+                request = request.model_copy(update={"unified_diff": repaired_diff})
+                self._validate_request(incident, request)
+                await _remove_workspace(workspace)
+                await provider.materialize(
+                    request.repository,
+                    revision=request.source_revision,
+                    destination=workspace,
+                )
+                before = {
+                    path: _read_optional_text(workspace / path) for path in repaired_paths
+                }
+                changes = await _apply_and_collect_changes(
+                    workspace, request.unified_diff, before
+                )
+                await asyncio.to_thread(
+                    self._patch_path(incident).write_text,
+                    request.unified_diff,
+                    encoding="utf-8",
+                )
             checks = tuple(await self._sandbox.run_profile(request.check_profile, workspace))
             if not checks:
                 raise RemediationBlockedError("The selected check profile is empty")
@@ -399,6 +446,39 @@ def _read_optional_text(path: Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError as error:
         raise RemediationBlockedError("Binary file changes are not supported") from error
+
+
+async def _apply_and_collect_changes(
+    workspace: Path,
+    diff: str,
+    before: Mapping[str, str | None],
+) -> tuple[FileChange, ...]:
+    await _apply_patch(workspace, diff)
+    changes = tuple(
+        FileChange(
+            path=path,
+            content=_read_optional_text(workspace / path),
+            previous_exists=content is not None,
+        )
+        for path, content in before.items()
+    )
+    if all(item.content == before[item.path] for item in changes):
+        raise RemediationBlockedError("Patch produced no file changes")
+    return changes
+
+
+def _repair_snapshots(
+    before: Mapping[str, str | None], *, max_characters_per_file: int = 30_000
+) -> tuple[PatchRepairSnapshot, ...]:
+    snapshots: list[PatchRepairSnapshot] = []
+    for path, content in before.items():
+        if content is not None and len(content) > max_characters_per_file:
+            half = max_characters_per_file // 2
+            content = (
+                f"{content[:half]}\n... [SNAPSHOT TRUNCATED] ...\n{content[-half:]}"
+            )
+        snapshots.append(PatchRepairSnapshot(path=path, content=content))
+    return tuple(snapshots)
 
 
 def _summarize_change(change: FileChange) -> RemediationFileSummary:

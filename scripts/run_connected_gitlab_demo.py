@@ -18,7 +18,11 @@ from incident_investigator.core.remediation import RemediationPipeline
 from incident_investigator.core.runtime import SafeActionRunner
 from incident_investigator.demo import NoopRecoveryVerifier
 from incident_investigator.domain import IncidentEvent, IncidentKind, IncidentSource
-from incident_investigator.engines import OpenAIInvestigationEngine, OpenAIRemediationReviewer
+from incident_investigator.engines import (
+    OpenAIInvestigationEngine,
+    OpenAIPatchRepairer,
+    OpenAIRemediationReviewer,
+)
 from incident_investigator.settings import Settings
 
 
@@ -120,6 +124,9 @@ async def run(args: argparse.Namespace) -> int:
             ),
             OpenAIRemediationReviewer(openai_client, model=settings.openai_model),
             settings.remediation_workspace_path,
+            repairer=OpenAIPatchRepairer(
+                openai_client, model=settings.openai_model
+            ),
         )
         graph = build_investigation_graph(
             GraphServices(
