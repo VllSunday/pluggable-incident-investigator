@@ -109,3 +109,46 @@ async def test_gitlab_provider_collects_failed_job_trace_and_diff() -> None:
     assert [item.kind for item in evidence] == ["ci_job_log", "commit_diff"]
     assert "FAILED" in evidence[0].summary
     assert evidence[1].attributes["platform"] == "gitlab"
+
+
+@pytest.mark.asyncio
+async def test_gitlab_provider_falls_back_to_file_snapshot_for_large_diff() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/jobs"):
+            return httpx.Response(200, json=[])
+        if request.url.path.endswith("/diff"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "new_path": "src/retry_policy.py",
+                        "diff": "",
+                        "too_large": True,
+                        "collapsed": False,
+                    }
+                ],
+            )
+        if request.url.path.endswith("/src/retry_policy.py/raw"):
+            return httpx.Response(200, text="return base * (2**attempt)\n")
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        base_url="https://gitlab.test/api/v4", transport=httpx.MockTransport(handler)
+    ) as client:
+        evidence = await GitLabCIEvidenceProvider(client).collect(
+            IncidentEvent(
+                source=IncidentSource.GITLAB_CI,
+                kind=IncidentKind.CI_FAILURE,
+                external_id="91",
+                service="acme/repo",
+                title="Pipeline failed",
+                started_at=datetime.now(UTC),
+                correlation_id="gitlab:acme/repo:91",
+                metadata={"sha": "abc"},
+            ),
+            "collect evidence",
+        )
+
+    assert evidence[0].kind == "commit_diff"
+    assert "FILE SNAPSHOT src/retry_policy.py@abc" in evidence[0].summary
+    assert "2**attempt" in evidence[0].summary

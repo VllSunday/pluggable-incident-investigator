@@ -167,10 +167,20 @@ class GitLabCIEvidenceProvider:
                 filename = item.get("new_path")
                 if not filename:
                     continue
-                patch = (
-                    f"--- a/{filename}\n+++ b/{filename}\n"
-                    f"{item.get('diff', '[unavailable]')}"
-                )
+                diff = item.get("diff")
+                if not diff and (item.get("too_large") or item.get("collapsed")):
+                    file_path = quote(str(filename), safe="")
+                    raw_response = await self._client.get(
+                        f"/projects/{project}/repository/files/{file_path}/raw",
+                        params={"ref": sha},
+                    )
+                    raw_response.raise_for_status()
+                    patch = f"FILE SNAPSHOT {filename}@{sha}\n{raw_response.text}"
+                else:
+                    patch = (
+                        f"--- a/{filename}\n+++ b/{filename}\n"
+                        f"{diff or '[unavailable]'}"
+                    )
                 evidence.append(
                     EvidenceItem(
                         kind="commit_diff",

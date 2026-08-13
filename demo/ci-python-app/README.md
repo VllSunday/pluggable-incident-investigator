@@ -11,4 +11,4 @@ return min(base * (2 ** (attempt - 1)), maximum)
 
 The investigator must reproduce the failure, apply only the source patch, run the
 allowlisted tests and linter in its network-isolated sandbox, pause for human approval,
-and create a draft pull request.
+and create a draft pull request or GitLab merge request.

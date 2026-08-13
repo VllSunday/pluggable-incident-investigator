@@ -96,6 +96,20 @@ uv run python scripts/run_connected_github_demo.py `
   --evidence-only
 ```
 
+Для реального GitLab pipeline используется симметричная команда; токен читается из
+игнорируемого `.env`:
+
+```powershell
+uv run python scripts/run_connected_gitlab_demo.py `
+  --repository AllSunday/incident-investigator-demo-ci `
+  --pipeline-id <PIPELINE_ID> `
+  --sha <COMMIT_SHA> `
+  --evidence-only
+```
+
+Без `--approve` connected-run не создаёт ветку или merge request. Настоящий draft MR
+публикуется только после успешных sandbox checks и явного `--approve`.
+
 После заполнения `INVESTIGATOR_OPENAI_API_KEY` уберите `--evidence-only`. Без `--approve`
 система завершит investigation и sandbox validation, но не создаст ветку. Настоящий draft PR
 создаётся только при явном `--approve`.
