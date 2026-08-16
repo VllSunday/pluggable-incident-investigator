@@ -57,6 +57,8 @@ sh demo.sh
 - Цикл evidence → hypotheses → verification → Reflexion → action → recovery.
 - SQLite queue и LangGraph checkpoints, переживающие перезапуск процесса.
 - Таймауты, retry, iteration/tool budgets и безопасная эскалация.
+- Bounded replanning: ошибка action tool или recovery check становится новым evidence;
+  повтор уже провалившегося действия блокируется.
 - Human-in-the-Loop для runtime-действий и публикации draft PR/MR.
 - Запрос недостающего контекста через dashboard: текст или TXT/LOG/JSON/YAML.
 - Маскирование типовых секретов, provenance и SHA-256 операторских данных.
@@ -112,6 +114,8 @@ verification находятся вне модели. GitHub, GitLab, Prometheus,
 Подробнее: [архитектура](docs/architecture.md), [модель угроз](docs/threat-model.md),
 [observability и evals](docs/observability.md), [установка](docs/deployment.md),
 [сценарий защиты](docs/demo-runbook.md),
+[соответствие исходному ТЗ](docs/requirements-compliance.md),
+[редактируемая агентная диаграмма](docs/agent-architecture.excalidraw),
 [аудит по книге об AI-агентах](docs/book-review.md).
 
 ## Что проект не обещает

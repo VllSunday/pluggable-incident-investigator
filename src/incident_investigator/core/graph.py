@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, TypedDict
@@ -21,7 +22,12 @@ from incident_investigator.core.remediation import (
     RemediationPipeline,
     RemediationReport,
 )
-from incident_investigator.core.runtime import ExecutionBudget, SafeActionRunner
+from incident_investigator.core.runtime import (
+    BudgetExceededError,
+    ExecutionBudget,
+    SafeActionRunner,
+    ToolExecutionError,
+)
 from incident_investigator.domain import (
     ActionProposal,
     ActionResult,
@@ -49,6 +55,8 @@ class InvestigationState(TypedDict, total=False):
     recovery_verified: bool | None
     recovery_summary: str | None
     remediation_report: dict[str, Any] | None
+    action_replans: int
+    failed_action_idempotency_keys: list[str]
     iteration: int
     human_input_rounds: int
     max_iterations: int
@@ -68,6 +76,7 @@ class GraphServices:
     remediation_pipeline: RemediationPipeline | None = None
     max_tool_calls: int = 12
     max_elapsed_seconds: float = 120.0
+    max_action_replans: int = 1
 
 
 def _incident(state: InvestigationState) -> IncidentEvent:
@@ -87,6 +96,62 @@ def build_investigation_graph(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
 ):
+    def action_failure_update(
+        state: InvestigationState,
+        proposal: ActionProposal,
+        *,
+        summary: str,
+        failure_kind: str,
+        tool_calls_used: int | None = None,
+    ) -> dict[str, Any]:
+        evidence = _evidence(state)
+        failure = EvidenceItem(
+            kind=failure_kind,
+            source_uri=f"action://{proposal.tool_name}/{proposal.action_id}",
+            summary=summary,
+            attributes={
+                "tool_name": proposal.tool_name,
+                "action_id": str(proposal.action_id),
+                "idempotency_key": proposal.idempotency_key,
+                "provider": "action_runtime",
+            },
+        )
+        unique = {str(item.evidence_id): item for item in [*evidence, failure]}
+        replans = state.get("action_replans", 0) + 1
+        used = (
+            state.get("tool_calls_used", 0)
+            if tool_calls_used is None
+            else tool_calls_used
+        )
+        can_replan = (
+            replans <= services.max_action_replans
+            and used < services.max_tool_calls
+        )
+        failed_keys = list(state.get("failed_action_idempotency_keys", []))
+        if proposal.idempotency_key not in failed_keys:
+            failed_keys.append(proposal.idempotency_key)
+        return {
+            "evidence": [item.model_dump(mode="json") for item in unique.values()],
+            "proposed_action": None,
+            "policy_decision": None,
+            "approval_status": ApprovalStatus.NOT_REQUIRED.value,
+            "action_result": ActionResult(
+                action_id=proposal.action_id,
+                success=False,
+                summary=summary,
+                details={"failure_kind": failure_kind},
+            ).model_dump(mode="json"),
+            "action_replans": replans,
+            "failed_action_idempotency_keys": failed_keys,
+            "tool_calls_used": used,
+            "errors": [*state.get("errors", []), f"{failure_kind}:{summary}"],
+            "status": (
+                "action_failed_replanning"
+                if can_replan
+                else "action_failed_escalated"
+            ),
+        }
+
     async def collect_evidence(state: InvestigationState) -> dict[str, Any]:
         incident = _incident(state)
         requests = state.get("evidence_requests") or ["collect initial diagnostic evidence"]
@@ -266,6 +331,17 @@ def build_investigation_graph(
         )
         if proposal is None:
             return {"proposed_action": None, "status": "no_safe_action"}
+        if proposal.idempotency_key in state.get(
+            "failed_action_idempotency_keys", []
+        ):
+            return {
+                "proposed_action": None,
+                "errors": [
+                    *state.get("errors", []),
+                    f"policy:repeated_failed_action:{proposal.idempotency_key}",
+                ],
+                "status": "repeated_action_blocked",
+            }
         decision = services.policy.evaluate(proposal)
         if (
             decision.allowed
@@ -288,7 +364,15 @@ def build_investigation_graph(
 
     def route_after_policy(
         state: InvestigationState,
-    ) -> Literal["prepare_remediation", "approval", "execute_action", "finish"]:
+    ) -> Literal[
+        "generate_hypotheses",
+        "prepare_remediation",
+        "approval",
+        "execute_action",
+        "finish",
+    ]:
+        if state.get("status") == "action_failed_replanning":
+            return "generate_hypotheses"
         if state.get("proposed_action") is None:
             return "finish"
         decision = state.get("policy_decision") or {}
@@ -314,11 +398,15 @@ def build_investigation_graph(
             report = await services.remediation_pipeline.prepare(
                 _incident(state), proposal
             )
-        except RemediationBlockedError as error:
-            return {
-                "status": "remediation_blocked",
-                "errors": [*state.get("errors", []), f"remediation:{error}"],
-            }
+        except Exception as error:
+            with suppress(Exception):
+                await services.remediation_pipeline.discard(_incident(state))
+            return action_failure_update(
+                state,
+                ActionProposal.model_validate(state["proposed_action"]),
+                summary=f"Remediation preparation failed: {type(error).__name__}: {error}",
+                failure_kind="remediation_failure",
+            )
         return {
             "proposed_action": proposal.model_copy(
                 update={
@@ -334,7 +422,9 @@ def build_investigation_graph(
 
     def route_after_remediation(
         state: InvestigationState,
-    ) -> Literal["approval", "finish"]:
+    ) -> Literal["generate_hypotheses", "approval", "finish"]:
+        if state.get("status") == "action_failed_replanning":
+            return "generate_hypotheses"
         return "approval" if state.get("remediation_report") else "finish"
 
     async def approval(
@@ -378,11 +468,22 @@ def build_investigation_graph(
     async def publish_remediation(state: InvestigationState) -> dict[str, Any]:
         if services.remediation_pipeline is None:
             raise RemediationBlockedError("Remediation pipeline is not configured")
-        result = await services.remediation_pipeline.publish(
-            _incident(state),
-            ActionProposal.model_validate(state["proposed_action"]),
-            RemediationReport.model_validate(state["remediation_report"]),
-        )
+        proposal = ActionProposal.model_validate(state["proposed_action"])
+        try:
+            result = await services.remediation_pipeline.publish(
+                _incident(state),
+                proposal,
+                RemediationReport.model_validate(state["remediation_report"]),
+            )
+        except Exception as error:
+            with suppress(Exception):
+                await services.remediation_pipeline.discard(_incident(state))
+            return action_failure_update(
+                state,
+                proposal,
+                summary=f"Draft change publication failed: {type(error).__name__}: {error}",
+                failure_kind="remediation_publish_failure",
+            )
         return {
             "action_result": result.model_dump(mode="json"),
             "status": "draft_change_created",
@@ -395,11 +496,32 @@ def build_investigation_graph(
             max_tool_calls=max(remaining_calls, 0),
             max_elapsed_seconds=services.max_elapsed_seconds,
         )
-        outcome = await services.action_runner.execute(
-            proposal,
-            ApprovalStatus(state["approval_status"]),
-            action_budget,
-        )
+        try:
+            outcome = await services.action_runner.execute(
+                proposal,
+                ApprovalStatus(state["approval_status"]),
+                action_budget,
+            )
+        except (BudgetExceededError, ToolExecutionError) as error:
+            return action_failure_update(
+                state,
+                proposal,
+                summary=f"Action execution failed: {type(error).__name__}: {error}",
+                failure_kind="action_failure",
+                tool_calls_used=(
+                    state.get("tool_calls_used", 0) + action_budget.tool_calls_used
+                ),
+            )
+        if not outcome.value.success:
+            return action_failure_update(
+                state,
+                proposal,
+                summary=outcome.value.summary,
+                failure_kind="action_failure",
+                tool_calls_used=(
+                    state.get("tool_calls_used", 0) + action_budget.tool_calls_used
+                ),
+            )
         return {
             "action_result": outcome.value.model_dump(mode="json"),
             "tool_calls_used": (
@@ -411,11 +533,49 @@ def build_investigation_graph(
     async def verify_recovery(state: InvestigationState) -> dict[str, Any]:
         result = ActionResult.model_validate(state["action_result"])
         verified, summary = await services.recovery_verifier.verify(_incident(state), result)
+        if not verified:
+            proposal = ActionProposal.model_validate(state["proposed_action"])
+            update = action_failure_update(
+                state,
+                proposal,
+                summary=f"Recovery verification failed: {summary}",
+                failure_kind="recovery_failure",
+            )
+            update.update(
+                {
+                    "recovery_verified": False,
+                    "recovery_summary": summary,
+                }
+            )
+            return update
         return {
             "recovery_verified": verified,
             "recovery_summary": summary,
             "status": "recovered" if verified else "recovery_failed",
         }
+
+    def route_after_action(
+        state: InvestigationState,
+    ) -> Literal["generate_hypotheses", "verify_recovery", "finish"]:
+        if state.get("status") == "action_failed_replanning":
+            return "generate_hypotheses"
+        if state.get("status") == "action_failed_escalated":
+            return "finish"
+        return "verify_recovery"
+
+    def route_after_recovery(
+        state: InvestigationState,
+    ) -> Literal["generate_hypotheses", "finish"]:
+        if state.get("status") == "action_failed_replanning":
+            return "generate_hypotheses"
+        return "finish"
+
+    def route_after_publish(
+        state: InvestigationState,
+    ) -> Literal["generate_hypotheses", "finish"]:
+        if state.get("status") == "action_failed_replanning":
+            return "generate_hypotheses"
+        return "finish"
 
     def finish(state: InvestigationState) -> dict[str, Any]:
         status = state.get("status", "completed")
@@ -442,9 +602,9 @@ def build_investigation_graph(
     builder.add_conditional_edges("reflect", route_after_reflection)
     builder.add_conditional_edges("propose_action", route_after_policy)
     builder.add_conditional_edges("prepare_remediation", route_after_remediation)
-    builder.add_edge("publish_remediation", END)
-    builder.add_edge("execute_action", "verify_recovery")
-    builder.add_edge("verify_recovery", END)
+    builder.add_conditional_edges("publish_remediation", route_after_publish)
+    builder.add_conditional_edges("execute_action", route_after_action)
+    builder.add_conditional_edges("verify_recovery", route_after_recovery)
     builder.add_edge("finish", END)
 
     return builder.compile(checkpointer=checkpointer or InMemorySaver())
@@ -465,6 +625,8 @@ def initial_state(incident: IncidentEvent, *, max_iterations: int = 3) -> Invest
         "recovery_verified": None,
         "recovery_summary": None,
         "remediation_report": None,
+        "action_replans": 0,
+        "failed_action_idempotency_keys": [],
         "iteration": 0,
         "human_input_rounds": 0,
         "max_iterations": max_iterations,

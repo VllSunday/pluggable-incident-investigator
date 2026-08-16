@@ -224,6 +224,8 @@ class InvestigationService:
             "remediation_blocked",
             "evidence_budget_exhausted",
             "operator_escalated",
+            "action_failed_escalated",
+            "repeated_action_blocked",
         }:
             status = IncidentStatus.ESCALATED
         elif graph_status == "action_rejected":

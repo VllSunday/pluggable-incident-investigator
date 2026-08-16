@@ -133,10 +133,55 @@ class FakeExecutor:
         )
 
 
+class FailingExecutor:
+    name = "restart_demo_database"
+
+    async def execute(self, proposal: ActionProposal):
+        del proposal
+        raise ConnectionError("control plane unavailable")
+
+
+class FallbackExecutor:
+    name = "rollback_demo_database"
+
+    async def execute(self, proposal: ActionProposal):
+        return ActionResult(
+            action_id=proposal.action_id,
+            success=True,
+            summary="Fallback rollback completed",
+        )
+
+
+class ReplanningEngine(FakeEngine):
+    async def propose_action(self, incident: IncidentEvent, evidence, hypotheses):
+        del hypotheses
+        failed = any(
+            item.kind in {"action_failure", "recovery_failure"}
+            for item in evidence
+        )
+        tool_name = "rollback_demo_database" if failed else "restart_demo_database"
+        return ActionProposal(
+            tool_name=tool_name,
+            description="Use fallback rollback" if failed else "Restart database",
+            risk=RiskLevel.HIGH,
+            idempotency_key=f"{incident.incident_id}:{tool_name}",
+            rollback_plan="Escalate to the operator",
+            expected_outcome="Database health check passes",
+        )
+
+
 class FakeRecoveryVerifier:
     async def verify(self, incident: IncidentEvent, action_result: ActionResult):
         del incident, action_result
         return True, "Health check passed"
+
+
+class ConditionalRecoveryVerifier:
+    async def verify(self, incident: IncidentEvent, action_result: ActionResult):
+        del incident
+        if action_result.summary == "Demo database restarted":
+            return False, "The alert is still firing"
+        return True, "Fallback rollback cleared the alert"
 
 
 def incident() -> IncidentEvent:
@@ -292,3 +337,131 @@ async def test_graph_escalates_when_operator_cannot_supply_evidence() -> None:
     )
 
     assert completed["status"] == "operator_escalated"
+
+
+@pytest.mark.asyncio
+async def test_graph_replans_with_failure_evidence_after_action_error() -> None:
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(FakeEvidenceProvider(),),
+            engine=ReplanningEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner(
+                {
+                    "restart_demo_database": FailingExecutor(),
+                    "rollback_demo_database": FallbackExecutor(),
+                },
+                max_attempts=1,
+            ),
+            recovery_verifier=FakeRecoveryVerifier(),
+        )
+    )
+    config = {"configurable": {"thread_id": "action-replanning-flow"}}
+
+    await graph.ainvoke(initial_state(incident()), config=config)
+    replanned = await graph.ainvoke(
+        Command(resume={"approved": True}), config=config
+    )
+
+    assert replanned["status"] == "action_proposed"
+    assert replanned["action_replans"] == 1
+    assert replanned["proposed_action"]["tool_name"] == "rollback_demo_database"
+    assert any(item["kind"] == "action_failure" for item in replanned["evidence"])
+    assert replanned["__interrupt__"][0].value["type"] == "action_approval"
+
+    completed = await graph.ainvoke(
+        Command(resume={"approved": True}), config=config
+    )
+
+    assert completed["status"] == "recovered"
+    assert completed["recovery_verified"] is True
+
+
+@pytest.mark.asyncio
+async def test_graph_blocks_repeating_an_action_that_already_failed() -> None:
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(FakeEvidenceProvider(),),
+            engine=FakeEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner(
+                {"restart_demo_database": FailingExecutor()}, max_attempts=1
+            ),
+            recovery_verifier=FakeRecoveryVerifier(),
+        )
+    )
+    config = {"configurable": {"thread_id": "repeated-action-flow"}}
+
+    await graph.ainvoke(initial_state(incident()), config=config)
+    completed = await graph.ainvoke(
+        Command(resume={"approved": True}), config=config
+    )
+
+    assert completed["status"] == "repeated_action_blocked"
+    assert completed["action_replans"] == 1
+    assert any(
+        error.startswith("policy:repeated_failed_action:")
+        for error in completed["errors"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_replans_when_recovery_verification_fails() -> None:
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(FakeEvidenceProvider(),),
+            engine=ReplanningEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner(
+                {
+                    "restart_demo_database": FakeExecutor(),
+                    "rollback_demo_database": FallbackExecutor(),
+                }
+            ),
+            recovery_verifier=ConditionalRecoveryVerifier(),
+        )
+    )
+    config = {"configurable": {"thread_id": "recovery-replanning-flow"}}
+
+    await graph.ainvoke(initial_state(incident()), config=config)
+    replanned = await graph.ainvoke(
+        Command(resume={"approved": True}), config=config
+    )
+
+    assert replanned["status"] == "action_proposed"
+    assert replanned["recovery_verified"] is False
+    assert replanned["recovery_summary"] == "The alert is still firing"
+    assert any(item["kind"] == "recovery_failure" for item in replanned["evidence"])
+
+    completed = await graph.ainvoke(
+        Command(resume={"approved": True}), config=config
+    )
+
+    assert completed["status"] == "recovered"
+    assert completed["recovery_verified"] is True
+
+
+@pytest.mark.asyncio
+async def test_graph_escalates_action_failure_when_tool_budget_is_spent() -> None:
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(FakeEvidenceProvider(),),
+            engine=FakeEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner(
+                {"restart_demo_database": FailingExecutor()}, max_attempts=1
+            ),
+            recovery_verifier=FakeRecoveryVerifier(),
+            max_tool_calls=2,
+        )
+    )
+    config = {"configurable": {"thread_id": "action-budget-flow"}}
+
+    await graph.ainvoke(initial_state(incident()), config=config)
+    completed = await graph.ainvoke(
+        Command(resume={"approved": True}), config=config
+    )
+
+    assert completed["status"] == "action_failed_escalated"
+    assert completed["tool_calls_used"] == 2
+    assert completed["action_result"]["success"] is False

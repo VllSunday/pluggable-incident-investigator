@@ -4,6 +4,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 import httpx
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 
 from incident_investigator.adapters.events import (
@@ -48,7 +49,7 @@ from incident_investigator.engines import (
     OpenAIPatchRepairer,
     OpenAIRemediationReviewer,
 )
-from incident_investigator.settings import Settings
+from incident_investigator.settings import Settings, configure_langsmith_environment
 
 
 class DeferredService:
@@ -86,6 +87,7 @@ class DeferredService:
 
 
 settings = Settings()
+configure_langsmith_environment(settings)
 deferred_service = DeferredService()
 
 
@@ -198,8 +200,12 @@ async def lifespan(app):
                 raise RuntimeError(
                     "INVESTIGATOR_OPENAI_API_KEY is required in connected mode"
                 )
-            llm_client = AsyncOpenAI(
-                api_key=settings.openai_api_key.get_secret_value(), timeout=45, max_retries=2
+            llm_client = wrap_openai(
+                AsyncOpenAI(
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    timeout=45,
+                    max_retries=2,
+                )
             )
             engine = OpenAIInvestigationEngine(
                 llm_client,

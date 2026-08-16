@@ -19,6 +19,18 @@ kind. Секреты и полные исходные файлы в metadata н�
 Без `LANGSMITH_TRACING=true` система работает полностью локально; observability не является
 зависимостью для исполнения расследования.
 
+OpenAI client обёрнут официальным `wrap_openai`, поэтому model calls отображаются внутри
+LangGraph trace как LLM spans с model metadata, latency и token usage. Проверка реального
+подключения выполняет один короткий model call и затем убеждается, что span появился в
+настроенном LangSmith project:
+
+```powershell
+uv run python scripts/verify_observability.py
+```
+
+Скрипт не печатает API keys или содержимое `.env` и завершается с ненулевым кодом, если
+OpenAI call или доставка LangSmith trace не сработали.
+
 ## Ground-truth evaluation
 
 Cases находятся в `evals/ground_truth.yaml`. Runner читает durable incident records через

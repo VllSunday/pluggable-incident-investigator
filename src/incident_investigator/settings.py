@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -52,6 +53,18 @@ class Settings(BaseSettings):
             ]
         }
     )
+    langsmith_tracing: bool = Field(
+        default=False, validation_alias="LANGSMITH_TRACING"
+    )
+    langsmith_api_key: SecretStr | None = Field(
+        default=None, validation_alias="LANGSMITH_API_KEY"
+    )
+    langsmith_project: str = Field(
+        default="incident-investigator", validation_alias="LANGSMITH_PROJECT"
+    )
+    langsmith_workspace_id: str | None = Field(
+        default=None, validation_alias="LANGSMITH_WORKSPACE_ID"
+    )
 
     @property
     def incidents_database_path(self) -> Path:
@@ -68,3 +81,15 @@ class Settings(BaseSettings):
     @property
     def operator_evidence_path(self) -> Path:
         return self.data_dir / "operator-evidence"
+
+
+def configure_langsmith_environment(settings: Settings) -> None:
+    if not settings.langsmith_tracing:
+        return
+    if settings.langsmith_api_key is None:
+        raise RuntimeError("LANGSMITH_API_KEY is required when tracing is enabled")
+    os.environ["LANGSMITH_TRACING"] = "true"
+    os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key.get_secret_value()
+    os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
+    if settings.langsmith_workspace_id:
+        os.environ["LANGSMITH_WORKSPACE_ID"] = settings.langsmith_workspace_id

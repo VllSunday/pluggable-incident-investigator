@@ -63,6 +63,7 @@ TXT/LOG/JSON/YAML и нажмите **«Передать агенту и про�
 Проверка ground truth:
 
 ```powershell
+$env:INVESTIGATOR_ADMIN_API_TOKEN="local-demo-admin-token-change-me"
 uv run python scripts/evaluate_incidents.py `
   --case runtime_high_error_ratio `
   --minimum-score 0.8

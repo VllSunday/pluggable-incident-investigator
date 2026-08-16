@@ -40,6 +40,16 @@ class BudgetExhaustedGraph:
         }
 
 
+class ActionFailureGraph:
+    async def ainvoke(self, value, config):
+        del value, config
+        return {
+            "status": "action_failed_escalated",
+            "evidence": [{"kind": "action_failure"}],
+            "errors": ["action_failure:control plane unavailable"],
+        }
+
+
 class InputInterruptGraph:
     def __init__(self, request: InformationRequest) -> None:
         self.request = request
@@ -111,6 +121,20 @@ async def test_service_escalates_when_evidence_budget_is_exhausted(tmp_path) -> 
 
     assert records[0].status is IncidentStatus.ESCALATED
     assert records[0].graph_status == "evidence_budget_exhausted"
+
+
+@pytest.mark.asyncio
+async def test_service_escalates_after_bounded_action_replanning(tmp_path) -> None:
+    repository = SqliteIncidentRepository(tmp_path / "incidents.db")
+    await repository.initialize()
+    service = InvestigationService(repository, ActionFailureGraph())
+    await service.accept(event().model_copy(update={"correlation_id": "action:fp-1"}))
+
+    assert await service.process_next() is True
+    records = await service.list_incidents()
+
+    assert records[0].status is IncidentStatus.ESCALATED
+    assert records[0].graph_status == "action_failed_escalated"
 
 
 @pytest.mark.asyncio

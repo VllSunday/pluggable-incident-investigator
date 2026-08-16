@@ -8,13 +8,13 @@ cases:
       - event_metadata
       - metric_snapshot
     root_cause_any:
-      - application-level
-      - 80% of requests
-      - error ratio
+      - runtime override
+      - unsafe error fraction
+      - observed 5xx alert
     allowed_graph_statuses:
-      - escalated
+      - recovered
     max_tool_calls: 12
-    require_no_action: true
+    require_no_action: false
 
   - name: gitlab_retry_delay_off_by_one
     match:

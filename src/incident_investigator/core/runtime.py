@@ -89,6 +89,10 @@ class SafeActionRunner:
                 return ToolCallOutcome(value=result, attempts=attempt)
             except (TimeoutError, ConnectionError) as error:
                 last_error = error
+            except Exception as error:
+                raise ToolExecutionError(
+                    f"Tool '{proposal.tool_name}' failed with a non-retryable error"
+                ) from error
 
         raise ToolExecutionError(
             f"Tool '{proposal.tool_name}' failed after {self._max_attempts} attempts"
