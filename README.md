@@ -111,6 +111,87 @@ LLM формирует структурированные гипотезы, но
 verification находятся вне модели. GitHub, GitLab, Prometheus, Telegram и конкретная LLM
 остаются заменяемыми адаптерами.
 
+```mermaid
+flowchart TD
+    GH["GitHub Actions"]
+    GL["GitLab CI"]
+    AM["Prometheus Alertmanager"]
+
+    ADAPTER["Event adapters<br/>проверка webhook и нормализация"]
+    EVENT["IncidentEvent<br/>единая модель инцидента"]
+    QUEUE["Durable queue и LangGraph checkpoint"]
+
+    GH --> ADAPTER
+    GL --> ADAPTER
+    AM --> ADAPTER
+    ADAPTER --> EVENT --> QUEUE
+
+    subgraph CORE["Универсальное агентное ядро"]
+        EVIDENCE["Evidence Orchestrator<br/>CI logs · diff · metrics · runtime logs"]
+        HYPOTHESIS["Hypothesis Agent<br/>гипотезы · confidence · evidence links"]
+        REFLEXION{"Reflexion Agent<br/>доказательств достаточно?"}
+        INPUT["Human-in-the-Loop<br/>запросить текст или файл"]
+        PLANNER["Action Planner<br/>минимальное обратимое действие"]
+        POLICY{"Policy Gate<br/>allowlist · risk · approval"}
+
+        EVIDENCE --> HYPOTHESIS --> REFLEXION
+        REFLEXION -- "нужно больше evidence" --> EVIDENCE
+        REFLEXION -- "не хватает контекста" --> INPUT
+        INPUT -- "operator evidence" --> HYPOTHESIS
+        REFLEXION -- "причина подтверждена" --> PLANNER --> POLICY
+    end
+
+    QUEUE --> EVIDENCE
+
+    subgraph RUNTIME["Runtime remediation"]
+        RUNTIME_APPROVAL["Human approval"]
+        EXECUTOR["Safe Action Executor<br/>timeout · retry · idempotency"]
+        RECOVERY{"Recovery Verifier<br/>alert исчез и сервис healthy?"}
+
+        RUNTIME_APPROVAL --> EXECUTOR --> RECOVERY
+    end
+
+    subgraph CODE["CI remediation"]
+        PATCH["Remediation Agent<br/>изолированный patch"]
+        SANDBOX["Docker Sandbox<br/>tests + linter · network off"]
+        CRITIC{"Independent Critic<br/>fix доказан и безопасен?"}
+        CODE_APPROVAL["Human approval<br/>evidence + diff + tests"]
+        PR["Draft GitHub PR<br/>или GitLab MR"]
+
+        PATCH --> SANDBOX --> CRITIC
+        CRITIC -- "bounded repair" --> PATCH
+        CRITIC -- "проверка пройдена" --> CODE_APPROVAL --> PR
+    end
+
+    POLICY -- "runtime action" --> RUNTIME_APPROVAL
+    POLICY -- "исправление кода" --> PATCH
+    POLICY -- "запрещено или небезопасно" --> REPORT
+
+    EXECUTOR -- "ошибка как новое evidence" --> HYPOTHESIS
+    RECOVERY -- "не восстановилось: bounded replan" --> HYPOTHESIS
+    RECOVERY -- "восстановлено" --> REPORT
+    PATCH -- "подготовка не удалась" --> HYPOTHESIS
+    PR --> REPORT
+    REFLEXION -- "безопасный прогресс невозможен" --> REPORT
+
+    REPORT["Incident Report<br/>причина · evidence · confidence · действия · результат"]
+    REPORT --> OUTPUT["Dashboard · Telegram · LangSmith trace"]
+
+    classDef agent fill:#e5dbff,stroke:#7048e8,stroke-width:2px;
+    classDef deterministic fill:#c5f6fa,stroke:#0b7285,stroke-width:2px;
+    classDef human fill:#fff3bf,stroke:#e67700,stroke-width:2px;
+    classDef result fill:#d3f9d8,stroke:#2b8a3e,stroke-width:2px;
+    class HYPOTHESIS,REFLEXION,PLANNER,PATCH,CRITIC agent;
+    class ADAPTER,EVENT,QUEUE,EVIDENCE,POLICY,EXECUTOR,RECOVERY,SANDBOX deterministic;
+    class INPUT,RUNTIME_APPROVAL,CODE_APPROVAL human;
+    class PR,REPORT,OUTPUT result;
+```
+
+Фиолетовым обозначены LLM-роли, голубым — детерминированные компоненты безопасности и
+интеграций, жёлтым — точки Human-in-the-Loop. Ошибка исполнения или неуспешная проверка
+восстановления не завершает worker: она становится новым evidence и запускает ограниченное
+перепланирование.
+
 Подробнее: [архитектура](docs/architecture.md), [модель угроз](docs/threat-model.md),
 [observability и evals](docs/observability.md), [установка](docs/deployment.md),
 [сценарий защиты](docs/demo-runbook.md),
