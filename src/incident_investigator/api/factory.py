@@ -3,10 +3,10 @@ from __future__ import annotations
 import hmac
 import json
 from collections.abc import Sequence
-from typing import Any, Protocol
+from typing import Annotated, Any, Protocol
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
 
 from incident_investigator.adapters.events import (
     AlertmanagerEventAdapter,
@@ -17,6 +17,7 @@ from incident_investigator.adapters.events.alertmanager import InvalidWebhookTok
 from incident_investigator.adapters.events.github import InvalidWebhookSignature
 from incident_investigator.adapters.events.gitlab import InvalidGitLabWebhookToken
 from incident_investigator.application import IncidentRecord
+from incident_investigator.application.operator_input import OperatorEvidenceSubmission
 from incident_investigator.application.service import (
     IncidentNotFoundError,
     InvalidIncidentStateError,
@@ -37,6 +38,14 @@ class IncidentControlPlane(Protocol):
         self, incident_id: UUID | str, *, approved: bool
     ) -> IncidentRecord: ...
 
+    async def submit_evidence(
+        self, incident_id: UUID | str, submission: OperatorEvidenceSubmission
+    ) -> IncidentRecord: ...
+
+    async def decline_information_request(
+        self, incident_id: UUID | str
+    ) -> IncidentRecord: ...
+
 
 def create_app(
     *,
@@ -46,6 +55,7 @@ def create_app(
     incident_sink: IncidentSink,
     control_plane: IncidentControlPlane | None = None,
     admin_api_token: str,
+    operator_evidence_max_bytes: int = 1_000_000,
     lifespan: Any = None,
 ) -> FastAPI:
     if len(admin_api_token) < 16:
@@ -145,6 +155,78 @@ def create_app(
                 record = await control_plane.decide_approval(
                     incident_id, approved=decision["approved"]
                 )
+            except IncidentNotFoundError as error:
+                raise HTTPException(status_code=404, detail="Incident not found") from error
+            except InvalidIncidentStateError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            return record.model_dump(mode="json")
+
+        @app.post("/api/incidents/{incident_id}/evidence")
+        async def submit_text_evidence(
+            incident_id: UUID,
+            request: Request,
+            submission: OperatorEvidenceSubmission,
+        ) -> dict[str, object]:
+            verify_admin(request)
+            try:
+                record = await control_plane.submit_evidence(
+                    incident_id, submission
+                )
+            except IncidentNotFoundError as error:
+                raise HTTPException(status_code=404, detail="Incident not found") from error
+            except InvalidIncidentStateError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            return record.model_dump(mode="json")
+
+        @app.post("/api/incidents/{incident_id}/evidence/file")
+        async def submit_file_evidence(
+            incident_id: UUID,
+            request: Request,
+            request_id: Annotated[UUID, Form()],
+            file: Annotated[UploadFile, File()],
+        ) -> dict[str, object]:
+            verify_admin(request)
+            filename = file.filename or "operator-evidence.txt"
+            suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+            if suffix not in {"txt", "log", "json", "yaml", "yml"}:
+                raise HTTPException(
+                    status_code=415,
+                    detail="Only .txt, .log, .json, .yaml and .yml files are accepted",
+                )
+            content = await file.read(operator_evidence_max_bytes + 1)
+            if len(content) > operator_evidence_max_bytes:
+                raise HTTPException(status_code=413, detail="Evidence file is too large")
+            if b"\x00" in content:
+                raise HTTPException(status_code=415, detail="Binary files are not accepted")
+            try:
+                text = content.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise HTTPException(
+                    status_code=415, detail="Evidence file must use UTF-8 encoding"
+                ) from error
+            try:
+                record = await control_plane.submit_evidence(
+                    incident_id,
+                    OperatorEvidenceSubmission(
+                        request_id=request_id,
+                        text=text,
+                        source_name=filename,
+                        media_type=file.content_type or "text/plain",
+                    ),
+                )
+            except IncidentNotFoundError as error:
+                raise HTTPException(status_code=404, detail="Incident not found") from error
+            except InvalidIncidentStateError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            return record.model_dump(mode="json")
+
+        @app.post("/api/incidents/{incident_id}/evidence/decline")
+        async def decline_evidence_request(
+            incident_id: UUID, request: Request
+        ) -> dict[str, object]:
+            verify_admin(request)
+            try:
+                record = await control_plane.decline_information_request(incident_id)
             except IncidentNotFoundError as error:
                 raise HTTPException(status_code=404, detail="Incident not found") from error
             except InvalidIncidentStateError as error:

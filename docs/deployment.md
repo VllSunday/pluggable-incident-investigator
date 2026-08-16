@@ -48,6 +48,18 @@ suite. Явный запуск возможен через `uv run pytest -o "ad
 
 ## Вариант 2 — Docker на ноутбуке
 
+Для первого запуска без `.env`, внешних репозиториев и API key используйте встроенный стенд:
+
+```powershell
+.\demo.ps1
+```
+
+Он включает `fixture`-режим только для синтетического runtime-инцидента. Все webhooks,
+checkpoints, evidence providers, approval, action executor и recovery checks остаются настоящими;
+детерминированным является только reasoning engine.
+
+Для базового API в собственном режиме:
+
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build
@@ -58,16 +70,19 @@ SQLite incidents/checkpoints находятся в named volume `investigator-da
 
 ### Полный runtime-стенд
 
-Для воспроизводимого Alertmanager-сценария используйте дополнительный compose override:
+Для воспроизводимого Alertmanager-сценария с настоящей LLM используйте дополнительный compose
+override и `INVESTIGATOR_OPENAI_API_KEY` в `.env`:
 
 ```powershell
 docker compose -f compose.yaml -f compose.runtime.yaml up -d --build
 ```
 
 Он добавляет synthetic runtime app, Prometheus с alert rule и Alertmanager. Override
-переводит investigator в connected mode, подключает Prometheus по внутренней Docker-сети и
-задаёт четыре server-owned PromQL-шаблона: доступность target, request rate, error rate и
-error ratio. Значение `runtime-demo-token` в fixture публичное и предназначено только для
+переводит investigator в connected mode, подключает Prometheus и read-only runtime logs,
+задаёт четыре server-owned PromQL-шаблона и регистрирует единственное действие
+`rollback_runtime_config`. Оно ограничено сервисом `runtime-demo`, целевым значением `0.0`
+и всегда проходит через Human-in-the-Loop. После выполнения recovery verifier проверяет
+health сервиса и отсутствие firing-alert. Значение `runtime-demo-token` в fixture публичное и предназначено только для
 локального стенда; в реальном контуре используйте отдельный случайный secret.
 
 Проверить состояние можно в dashboard (`:8501`), Prometheus (`:9090`) и Alertmanager
@@ -133,6 +148,23 @@ Adapter принимает стандартный `Authorization: Bearer <token>
 PromQL не принимается из alert payload или ответа LLM. Оператор задаёт allowlisted templates
 в `INVESTIGATOR_PROMETHEUS_QUERY_TEMPLATES`; adapter подставляет только нормализованное имя
 service. Это сохраняет read-only boundary и предсказуемый бюджет запросов.
+
+## Telegram-уведомления
+
+```dotenv
+INVESTIGATOR_TELEGRAM_BOT_TOKEN=<secret>
+INVESTIGATOR_TELEGRAM_CHAT_ID=<chat-id>
+INVESTIGATOR_TELEGRAM_LANGUAGE=ru
+INVESTIGATOR_DASHBOARD_URL=https://incidents.example.com
+INVESTIGATOR_OUTPUT_LANGUAGE=ru
+```
+
+Уведомление сообщает, что произошло, требуется ли действие человека и были ли уже внесены
+изменения. Для локального запуска dashboard URL по умолчанию равен `http://127.0.0.1:8501`;
+на сервере задайте внешний HTTPS URL.
+
+`INVESTIGATOR_OUTPUT_LANGUAGE` задаёт язык новых LLM-гипотез и self-check. Уже сохранённые
+инциденты не переводятся задним числом; переключатель RU/EN меняет язык элементов dashboard.
 
 ## Масштабирование
 

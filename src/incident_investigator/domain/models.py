@@ -89,6 +89,19 @@ class ReflectionDecision(BaseModel):
     additional_evidence_requests: tuple[str, ...] = ()
 
 
+class InformationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_id: UUID = Field(default_factory=uuid4)
+    question: str = Field(min_length=1)
+    evidence_gap: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    accepted_input_types: tuple[str, ...] = ("text", "log", "json", "yaml")
+    sensitive_data_warning: str = (
+        "Do not submit passwords, access tokens, private keys, or personal data."
+    )
+
+
 class ActionProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

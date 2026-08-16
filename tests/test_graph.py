@@ -88,6 +88,40 @@ class GatheringEngine(FakeEngine):
             additional_evidence_requests=("request one", "request two"),
         )
 
+
+class OperatorInputEngine(FakeEngine):
+    async def generate_hypotheses(self, incident: IncidentEvent, evidence):
+        del incident
+        operator_items = [item for item in evidence if item.kind == "operator_evidence"]
+        return [
+            Hypothesis(
+                statement=(
+                    "Operator logs confirm the database refusal"
+                    if operator_items
+                    else "A database refusal is possible"
+                ),
+                confidence=0.98 if operator_items else 0.55,
+                supporting_evidence_ids=[item.evidence_id for item in operator_items],
+                required_checks=(
+                    [] if operator_items else ["Provide the application stack trace"]
+                ),
+                verified=bool(operator_items),
+            )
+        ]
+
+    async def reflect(self, incident: IncidentEvent, evidence, hypotheses):
+        del incident, evidence
+        if hypotheses[0].verified:
+            return ReflectionDecision(
+                outcome=ReflectionOutcome.READY_FOR_ACTION,
+                critique="The operator evidence directly confirms the cause",
+            )
+        return ReflectionDecision(
+            outcome=ReflectionOutcome.GATHER_MORE,
+            critique="The application stack trace is required to verify the cause",
+            additional_evidence_requests=("Provide the application stack trace",),
+        )
+
 class FakeExecutor:
     name = "restart_demo_database"
 
@@ -172,7 +206,7 @@ async def test_graph_exits_before_starting_calls_when_tool_budget_is_exhausted()
 
 
 @pytest.mark.asyncio
-async def test_graph_uses_remaining_budget_then_escalates_at_iteration_limit() -> None:
+async def test_graph_uses_remaining_budget_then_requests_operator_input() -> None:
     provider = TrackingEvidenceProvider()
     graph = build_investigation_graph(
         GraphServices(
@@ -185,12 +219,76 @@ async def test_graph_uses_remaining_budget_then_escalates_at_iteration_limit() -
         )
     )
 
-    completed = await graph.ainvoke(
+    paused = await graph.ainvoke(
         initial_state(incident(), max_iterations=2),
         config={"configurable": {"thread_id": "incident-partial-budget-test"}},
     )
 
-    assert completed["status"] == "escalated"
-    assert completed["errors"] == ["budget:tool_call_budget_truncated"]
-    assert completed["tool_calls_used"] == 2
+    assert paused["status"] == "input_required"
+    assert paused["__interrupt__"][0].value["type"] == "evidence_request"
+    assert paused["errors"] == ["budget:tool_call_budget_truncated"]
+    assert paused["tool_calls_used"] == 2
     assert provider.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_graph_resumes_same_thread_with_operator_evidence() -> None:
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(FakeEvidenceProvider(),),
+            engine=OperatorInputEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner(
+                {"restart_demo_database": FakeExecutor()}
+            ),
+            recovery_verifier=FakeRecoveryVerifier(),
+        )
+    )
+    config = {"configurable": {"thread_id": "operator-input-flow"}}
+
+    paused = await graph.ainvoke(
+        initial_state(incident(), max_iterations=1), config=config
+    )
+    request_id = paused["information_request"]["request_id"]
+    submitted = EvidenceItem(
+        kind="operator_evidence",
+        source_uri=f"operator://incident/{request_id}/stack.log",
+        summary="ConnectionRefusedError: database refused the connection",
+        attributes={"request_id": request_id, "provider": "operator"},
+    )
+
+    action_paused = await graph.ainvoke(
+        Command(resume={"evidence": [submitted.model_dump(mode="json")]}),
+        config=config,
+    )
+
+    assert action_paused["status"] == "action_proposed"
+    assert action_paused["human_input_rounds"] == 1
+    assert any(item["kind"] == "operator_evidence" for item in action_paused["evidence"])
+    assert action_paused["__interrupt__"][0].value["type"] == "action_approval"
+
+    completed = await graph.ainvoke(
+        Command(resume={"approved": True}), config=config
+    )
+    assert completed["status"] == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_graph_escalates_when_operator_cannot_supply_evidence() -> None:
+    graph = build_investigation_graph(
+        GraphServices(
+            evidence_providers=(FakeEvidenceProvider(),),
+            engine=OperatorInputEngine(),
+            policy=ActionPolicy(),
+            action_runner=SafeActionRunner({}),
+            recovery_verifier=FakeRecoveryVerifier(),
+        )
+    )
+    config = {"configurable": {"thread_id": "operator-decline-flow"}}
+    await graph.ainvoke(initial_state(incident(), max_iterations=1), config=config)
+
+    completed = await graph.ainvoke(
+        Command(resume={"unable": True}), config=config
+    )
+
+    assert completed["status"] == "operator_escalated"

@@ -13,6 +13,7 @@ from incident_investigator.domain import IncidentEvent
 class IncidentStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
+    AWAITING_INPUT = "awaiting_input"
     AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     ESCALATED = "escalated"
@@ -32,4 +33,3 @@ class IncidentRecord(BaseModel):
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-

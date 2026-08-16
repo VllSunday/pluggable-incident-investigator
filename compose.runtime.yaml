@@ -5,10 +5,16 @@ services:
       INVESTIGATOR_PROMETHEUS_URL: http://prometheus:9090
       INVESTIGATOR_ALERTMANAGER_WEBHOOK_TOKEN: runtime-demo-token
       INVESTIGATOR_REMEDIATION_ENABLED: "false"
+      INVESTIGATOR_RUNTIME_DIAGNOSTICS_URL: http://runtime-app:8000
+      INVESTIGATOR_RUNTIME_CONTROL_TOKEN: runtime-demo-control-token
+      INVESTIGATOR_RUNTIME_ACTION_ENABLED: "true"
+      INVESTIGATOR_RUNTIME_ALLOWED_SERVICE: runtime-demo
       INVESTIGATOR_PROMETHEUS_QUERY_TEMPLATES: >-
         {"target_health":"up{{job={service}}}","request_rate":"sum(rate(demo_http_requests_total{{job={service}}}[30s]))","error_rate":"sum(rate(demo_http_errors_total{{job={service}}}[30s]))","error_ratio":"sum(rate(demo_http_errors_total{{job={service}}}[30s])) / clamp_min(sum(rate(demo_http_requests_total{{job={service}}}[30s])), 0.001)"}
     depends_on:
       prometheus:
+        condition: service_started
+      runtime-app:
         condition: service_started
 
   runtime-app:
@@ -16,6 +22,7 @@ services:
       context: demo/runtime-app
     environment:
       DEMO_ERROR_FRACTION: "0.8"
+      DEMO_CONTROL_TOKEN: runtime-demo-control-token
 
   prometheus:
     image: prom/prometheus:v3.5.0

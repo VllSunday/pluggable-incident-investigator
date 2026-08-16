@@ -65,7 +65,9 @@ def test_github_verifies_signature() -> None:
 
 
 def test_alertmanager_normalizes_firing_alerts() -> None:
-    adapter = AlertmanagerEventAdapter("token")
+    adapter = AlertmanagerEventAdapter(
+        "token", allowed_actions=("rollback_runtime_config",)
+    )
     payload = {
         "status": "firing",
         "groupKey": "group-1",
@@ -95,6 +97,10 @@ def test_alertmanager_normalizes_firing_alerts() -> None:
     assert events[0].kind is IncidentKind.RUNTIME_ALERT
     assert events[0].service == "payments"
     assert events[0].severity == "critical"
+    assert events[0].metadata["allowed_actions"] == ["rollback_runtime_config"]
+    assert events[0].correlation_id == (
+        "alertmanager:fp-123:2026-08-12T10:00:00+00:00"
+    )
 
 
 def test_alertmanager_rejects_bad_token() -> None:

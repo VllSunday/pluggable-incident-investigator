@@ -29,6 +29,7 @@ from incident_investigator.domain import (
     EvidenceItem,
     Hypothesis,
     IncidentEvent,
+    InformationRequest,
     ReflectionDecision,
     ReflectionOutcome,
 )
@@ -40,6 +41,7 @@ class InvestigationState(TypedDict, total=False):
     hypotheses: list[dict[str, Any]]
     evidence_requests: list[str]
     reflection: dict[str, Any] | None
+    information_request: dict[str, Any] | None
     proposed_action: dict[str, Any] | None
     policy_decision: dict[str, Any] | None
     approval_status: str
@@ -48,6 +50,7 @@ class InvestigationState(TypedDict, total=False):
     recovery_summary: str | None
     remediation_report: dict[str, Any] | None
     iteration: int
+    human_input_rounds: int
     max_iterations: int
     tool_calls_used: int
     started_at: str
@@ -162,29 +165,100 @@ def build_investigation_graph(
         decision = await services.engine.reflect(
             _incident(state), _evidence(state), _hypotheses(state)
         )
+        status = "reflection_complete"
+        information_request = None
         if (
             decision.outcome is ReflectionOutcome.GATHER_MORE
             and state.get("iteration", 0) >= state.get("max_iterations", 3)
         ):
-            decision = ReflectionDecision(
-                outcome=ReflectionOutcome.ESCALATE,
-                critique="Investigation iteration budget exhausted; human escalation required",
-            )
+            requested_checks = list(decision.additional_evidence_requests)
+            if not requested_checks:
+                for hypothesis in _hypotheses(state):
+                    requested_checks.extend(hypothesis.required_checks)
+            if requested_checks and state.get("human_input_rounds", 0) < 1:
+                information_request = InformationRequest(
+                    question=requested_checks[0],
+                    evidence_gap=requested_checks[0],
+                    reason=decision.critique,
+                )
+                status = "input_required"
+            else:
+                decision = ReflectionDecision(
+                    outcome=ReflectionOutcome.ESCALATE,
+                    critique=(
+                        "Investigation cannot make safe progress after the allowed "
+                        "human-input round; specialist escalation is required"
+                    ),
+                )
         return {
             "reflection": decision.model_dump(mode="json"),
             "evidence_requests": list(decision.additional_evidence_requests),
-            "status": "reflection_complete",
+            "information_request": (
+                information_request.model_dump(mode="json")
+                if information_request is not None
+                else None
+            ),
+            "status": status,
         }
 
     def route_after_reflection(
         state: InvestigationState,
-    ) -> Literal["collect_evidence", "propose_action", "finish"]:
+    ) -> Literal["collect_evidence", "request_input", "propose_action", "finish"]:
+        if state.get("status") == "input_required":
+            return "request_input"
         decision = ReflectionDecision.model_validate(state["reflection"])
         if decision.outcome is ReflectionOutcome.GATHER_MORE:
             return "collect_evidence"
         if decision.outcome is ReflectionOutcome.READY_FOR_ACTION:
             return "propose_action"
         return "finish"
+
+    async def request_input(
+        state: InvestigationState,
+    ) -> Command[Literal["generate_hypotheses", "finish"]]:
+        request = InformationRequest.model_validate(state["information_request"])
+        response = interrupt(
+            {
+                "type": "evidence_request",
+                "incident_id": state["incident"]["incident_id"],
+                "request": request.model_dump(mode="json"),
+            }
+        )
+        if not isinstance(response, dict):
+            raise ValueError("Evidence-request resume payload must be an object")
+        if response.get("unable"):
+            return Command(
+                update={
+                    "information_request": None,
+                    "status": "operator_escalated",
+                },
+                goto="finish",
+            )
+        submitted = [
+            EvidenceItem.model_validate(item)
+            for item in response.get("evidence", [])
+        ]
+        if not submitted:
+            raise ValueError("At least one evidence item is required to resume")
+        if any(
+            item.attributes.get("request_id") != str(request.request_id)
+            for item in submitted
+        ):
+            raise ValueError("Submitted evidence does not match the active request")
+        existing = _evidence(state)
+        unique = {str(item.evidence_id): item for item in [*existing, *submitted]}
+        return Command(
+            update={
+                "evidence": [
+                    item.model_dump(mode="json") for item in unique.values()
+                ],
+                "information_request": None,
+                "evidence_requests": [],
+                "human_input_rounds": state.get("human_input_rounds", 0) + 1,
+                "status": "operator_evidence_received",
+            },
+            goto="generate_hypotheses",
+        )
 
     async def propose_action(state: InvestigationState) -> dict[str, Any]:
         proposal = await services.engine.propose_action(
@@ -353,6 +427,7 @@ def build_investigation_graph(
     builder.add_node("collect_evidence", collect_evidence)
     builder.add_node("generate_hypotheses", generate_hypotheses)
     builder.add_node("reflect", reflect)
+    builder.add_node("request_input", request_input)
     builder.add_node("propose_action", propose_action)
     builder.add_node("prepare_remediation", prepare_remediation)
     builder.add_node("approval", approval)
@@ -382,6 +457,7 @@ def initial_state(incident: IncidentEvent, *, max_iterations: int = 3) -> Invest
         "hypotheses": [],
         "evidence_requests": [],
         "reflection": None,
+        "information_request": None,
         "proposed_action": None,
         "policy_decision": None,
         "approval_status": ApprovalStatus.NOT_REQUIRED.value,
@@ -390,6 +466,7 @@ def initial_state(incident: IncidentEvent, *, max_iterations: int = 3) -> Invest
         "recovery_summary": None,
         "remediation_report": None,
         "iteration": 0,
+        "human_input_rounds": 0,
         "max_iterations": max_iterations,
         "tool_calls_used": 0,
         "started_at": datetime.now(UTC).isoformat(),

@@ -44,13 +44,21 @@ class HypothesisBatch(BaseModel):
     hypotheses: list[HypothesisCandidate]
 
 
+class RuntimeRollbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    service: str = Field(min_length=1)
+    target_error_fraction: float = Field(ge=0, le=0)
+    reason: str = Field(min_length=1)
+
+
 class ActionDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     should_act: bool
     tool_name: str
     description: str
-    arguments: RemediationRequest | None
+    arguments: RemediationRequest | RuntimeRollbackRequest | None
     risk: RiskLevel
     rollback_plan: str
     expected_outcome: str
@@ -81,9 +89,16 @@ will be checked by an external policy engine and a human approval gate.
 
 
 class OpenAIInvestigationEngine:
-    def __init__(self, client: Any, *, model: str = "gpt-5.4-mini") -> None:
+    def __init__(
+        self,
+        client: Any,
+        *,
+        model: str = "gpt-5.4-mini",
+        output_language: str = "en",
+    ) -> None:
         self._client = client
         self._model = model
+        self._output_language = output_language if output_language in {"ru", "en"} else "en"
 
     async def generate_hypotheses(self, incident: IncidentEvent, evidence):
         payload = self._context(incident, evidence)
@@ -129,10 +144,17 @@ class OpenAIInvestigationEngine:
             supporting_kinds = {
                 evidence_kinds[item] for item in supporting_ids
             }
-            quorum_verified = (
+            ci_quorum_verified = (
                 candidate.confidence >= 0.95
                 and not contradicting_ids
                 and {"ci_job_log", "commit_diff"}.issubset(supporting_kinds)
+            )
+            runtime_quorum_verified = (
+                candidate.confidence >= 0.95
+                and not contradicting_ids
+                and {"application_log", "metric_snapshot"}.issubset(
+                    supporting_kinds
+                )
             )
             hypotheses.append(
                 Hypothesis.model_validate(
@@ -141,7 +163,8 @@ class OpenAIInvestigationEngine:
                         "supporting_evidence_ids": supporting_ids,
                         "contradicting_evidence_ids": contradicting_ids,
                         "verified": (
-                            quorum_verified
+                            ci_quorum_verified
+                            or runtime_quorum_verified
                             or (
                                 candidate.verified
                                 and bool(supporting_ids)
@@ -199,6 +222,9 @@ class OpenAIInvestigationEngine:
             "allowed check_profile exactly from incident metadata. The unified diff must be "
             "minimal, use exact repository-relative paths from evidence, and contain an "
             "effective code change: removed and added lines must not be identical."
+            " For rollback_runtime_config, arguments must contain the incident service, "
+            "target_error_fraction=0.0, and a reason directly supported by application-log "
+            "and metric evidence. This action always requires human approval."
         )
         decision = None
         arguments = None
@@ -207,13 +233,24 @@ class OpenAIInvestigationEngine:
             if not decision.should_act:
                 return None
             if decision.arguments is None:
-                validation_error = "action is missing remediation arguments"
-            else:
+                validation_error = "action is missing arguments"
+            elif decision.tool_name == "prepare_draft_change" and not isinstance(
+                decision.arguments, RemediationRequest
+            ):
+                validation_error = "prepare_draft_change requires remediation arguments"
+            elif decision.tool_name == "rollback_runtime_config" and not isinstance(
+                decision.arguments, RuntimeRollbackRequest
+            ):
+                validation_error = "rollback_runtime_config requires runtime rollback arguments"
+            elif isinstance(decision.arguments, RemediationRequest):
                 arguments = decision.arguments.model_dump(mode="json")
                 arguments["unified_diff"] = _align_diff_paths(
                     arguments["unified_diff"], evidence
                 )
                 validation_error = _diff_validation_error(arguments["unified_diff"])
+            else:
+                arguments = decision.arguments.model_dump(mode="json")
+                validation_error = None
             if validation_error is None:
                 break
             if attempt == 1:
@@ -235,10 +272,18 @@ class OpenAIInvestigationEngine:
         )
 
     async def _parse(self, output_type, task: str, payload: dict[str, Any]):
+        language = "Russian" if self._output_language == "ru" else "English"
         response = await self._client.responses.parse(
             model=self._model,
             input=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": (
+                        f"{_SYSTEM_PROMPT}\nWrite all operator-facing explanations in "
+                        f"{language}. Preserve code, identifiers, paths, commands, and "
+                        "verbatim evidence in their original form."
+                    ),
+                },
                 {
                     "role": "user",
                     "content": f"{task}\n\nINPUT:\n{json.dumps(payload, ensure_ascii=False)}",

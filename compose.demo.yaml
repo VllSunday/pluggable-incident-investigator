@@ -1,0 +1,13 @@
+services:
+  investigator:
+    environment:
+      INVESTIGATOR_MODE: fixture
+      INVESTIGATOR_GITHUB_WEBHOOK_SECRET: local-demo-github-secret
+      INVESTIGATOR_GITLAB_WEBHOOK_TOKEN: local-demo-gitlab-token
+      INVESTIGATOR_ALERTMANAGER_WEBHOOK_TOKEN: runtime-demo-token
+      INVESTIGATOR_ADMIN_API_TOKEN: local-demo-admin-token-change-me
+      INVESTIGATOR_OUTPUT_LANGUAGE: ru
+
+  dashboard:
+    environment:
+      INVESTIGATOR_ADMIN_API_TOKEN: local-demo-admin-token-change-me

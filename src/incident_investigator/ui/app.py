@@ -19,7 +19,7 @@ TEXT = {
         "filter": "Фильтр инцидентов",
         "all": "Все",
         "active": "Активные",
-        "approval": "Ждут решения",
+        "approval": "Ждут вас",
         "resolved": "Завершённые",
         "refresh": "Обновить",
         "open": "Открыть",
@@ -51,6 +51,10 @@ TEXT = {
         "approve": "Разрешить действие",
         "reject": "Отклонить",
         "approval_note": "Действие не будет выполнено без вашего решения.",
+        "decision_title": "Агент готов исправить инцидент",
+        "decision_copy": "Причина подтверждена доказательствами. Проверьте предлагаемое действие и разрешите его — после этого агент сам выполнит изменение и проверит восстановление.",
+        "verification_running": "Выполняю действие и проверяю восстановление сервиса…",
+        "recovery_check": "Проверка восстановления",
         "sandbox_checks": "Sandbox-проверки",
         "changed_files": "Изменённые файлы",
         "critic": "Вердикт критика",
@@ -69,6 +73,56 @@ TEXT = {
         "notes": "Системные заметки",
         "budget_truncated": "Лимит инструментов достигнут: ядро сохранило собранные данные и безопасно передало расследование человеку.",
         "language": "Язык",
+        "operator_summary": "Что делать сейчас",
+        "what_happened": "Что произошло",
+        "agent_found": "Главная гипотеза агента",
+        "your_next_step": "Что проверить вам",
+        "impact": "Что уже изменено",
+        "how_to_read": "Как читать это расследование",
+        "guide_copy": "Сначала прочитайте резюме выше. Затем сверяйте вывод агента с блоками 02–04. Блок 05 требует вашего внимания только тогда, когда агент подготовил безопасное действие.",
+        "raw_evidence": "Показать исходные данные",
+        "source_link": "Открыть источник",
+        "finding_pending": "Подтверждённого вывода пока нет — агент продолжает собирать данные.",
+        "queued_headline": "Инцидент принят",
+        "running_headline": "Агент ведёт расследование",
+        "awaiting_approval_headline": "Требуется ваше решение",
+        "awaiting_input_headline": "Агенту нужны дополнительные данные",
+        "completed_headline": "Расследование завершено",
+        "escalated_headline": "Нужна ручная проверка",
+        "rejected_headline": "Действие отклонено",
+        "failed_headline": "Расследование завершилось с ошибкой",
+        "wait_step": "Пока ничего делать не нужно. Дождитесь итогового уведомления.",
+        "approval_step": "Проверьте предлагаемое действие, ожидаемый результат и план отката. Затем разрешите или отклоните действие одной кнопкой.",
+        "input_step": "Ответьте на точный вопрос агента ниже или приложите файл. После отправки расследование продолжится автоматически с того же места.",
+        "escalation_step": "Автоматического исправления нет. Проверьте доказательства и добавьте недостающий источник данных, например логи приложения.",
+        "runtime_escalation_step": "Подключите логи приложения (например, Loki) или вручную проверьте ошибки и маршруты сервиса за время инцидента. Метрики уже собраны, но без логов причина не подтверждается.",
+        "ci_escalation_step": "Причина CI-сбоя найдена, но публикация исправления отключена. Включите remediation для тестового репозитория и повторите событие, чтобы получить sandbox-проверки и запрос approval.",
+        "completed_step": "Проверьте результат в блоке 06 и убедитесь, что сервис или CI действительно восстановились.",
+        "failed_step": "Откройте системные ошибки справа, исправьте подключение или credentials и повторите событие.",
+        "no_changes": "Изменений не внесено.",
+        "approval_impact": "Действие подготовлено, но ещё не выполнено. До вашего решения система ничего не изменит.",
+        "input_impact": "Расследование приостановлено. Изменений не внесено, лимит ожидания не расходуется.",
+        "draft_impact": "Создан только черновик PR/MR; автоматического merge нет.",
+        "completed_impact": "Результат сохранён в истории расследования.",
+        "recovered_step": "Ничего делать не нужно: агент выполнил действие и автоматически проверил, что сервис здоров, а алерт больше не активен.",
+        "recovered_impact": "Изменение применено; восстановление подтверждено независимой проверкой health и Prometheus.",
+        "input_title": "Продолжить расследование",
+        "input_copy": "Агент исчерпал доступные источники и сформулировал, какого доказательства не хватает. Передайте его здесь — заново запускать инцидент не нужно.",
+        "input_question": "Что именно нужно",
+        "input_reason": "Почему без этого нельзя продолжить",
+        "input_formats": "Подходящие форматы",
+        "input_warning": "Перед отправкой удалите пароли, токены и персональные данные. Система дополнительно маскирует типовые секреты.",
+        "input_text_label": "Вставьте логи, конфигурацию или ответ",
+        "input_text_help": "Только относящийся к инциденту фрагмент; не отправляйте секреты.",
+        "input_file_label": "Или приложите текстовый файл",
+        "input_file_help": "TXT, LOG, JSON, YAML; не более 1 МБ.",
+        "input_submit": "Передать агенту и продолжить",
+        "input_decline": "Не могу предоставить данные",
+        "input_required": "Добавьте текст или файл.",
+        "input_one_source": "Выберите один вариант: текст или файл.",
+        "input_running": "Сохраняю доказательство и продолжаю расследование…",
+        "input_sent": "Данные приняты. Агент продолжил расследование.",
+        "input_declined": "Запрос закрыт. Инцидент передан на ручное расследование.",
     },
     "en": {
         "app": "Incident Investigator",
@@ -78,7 +132,7 @@ TEXT = {
         "filter": "Incident filter",
         "all": "All",
         "active": "Active",
-        "approval": "Needs decision",
+        "approval": "Needs you",
         "resolved": "Resolved",
         "refresh": "Refresh",
         "open": "Open",
@@ -110,6 +164,10 @@ TEXT = {
         "approve": "Allow action",
         "reject": "Reject",
         "approval_note": "The action cannot run without your decision.",
+        "decision_title": "The agent is ready to remediate",
+        "decision_copy": "The cause is supported by evidence. Review the proposed action and allow it; the agent will then execute it and verify recovery automatically.",
+        "verification_running": "Executing the action and verifying service recovery…",
+        "recovery_check": "Recovery verification",
         "sandbox_checks": "Sandbox checks",
         "changed_files": "Changed files",
         "critic": "Critic verdict",
@@ -128,22 +186,72 @@ TEXT = {
         "notes": "System notes",
         "budget_truncated": "The tool limit was reached: the core preserved collected evidence and safely escalated the investigation.",
         "language": "Language",
+        "operator_summary": "What to do now",
+        "what_happened": "What happened",
+        "agent_found": "Leading agent hypothesis",
+        "your_next_step": "What you need to check",
+        "impact": "What has changed",
+        "how_to_read": "How to read this investigation",
+        "guide_copy": "Start with the summary above. Then verify the agent's conclusion against sections 02–04. Section 05 needs your attention only when the agent has prepared a safe action.",
+        "raw_evidence": "Show raw evidence",
+        "source_link": "Open source",
+        "finding_pending": "There is no confirmed conclusion yet — the agent is still collecting evidence.",
+        "queued_headline": "Incident received",
+        "running_headline": "The agent is investigating",
+        "awaiting_approval_headline": "Your decision is required",
+        "awaiting_input_headline": "The agent needs additional evidence",
+        "completed_headline": "Investigation completed",
+        "escalated_headline": "Manual review needed",
+        "rejected_headline": "Action rejected",
+        "failed_headline": "Investigation failed",
+        "wait_step": "Nothing to do yet. Wait for the final notification.",
+        "approval_step": "Review the proposed action, expected outcome and rollback plan. Then allow or reject it with one button.",
+        "input_step": "Answer the agent's exact question below or attach a file. The investigation will resume automatically from the same point.",
+        "escalation_step": "No automatic fix is available. Review the evidence and connect the missing data source, such as application logs.",
+        "runtime_escalation_step": "Connect application logs (for example, Loki) or inspect service errors and routes for the incident window. Metrics are available, but logs are still required to verify the cause.",
+        "ci_escalation_step": "The CI cause is known, but fix publication is disabled. Enable remediation for the test repository and replay the event to run sandbox checks and request approval.",
+        "completed_step": "Review the outcome in section 06 and confirm that the service or CI actually recovered.",
+        "failed_step": "Open the system errors on the right, fix the connection or credentials, and replay the event.",
+        "no_changes": "No changes were made.",
+        "approval_impact": "The action is prepared but has not run. Nothing changes before your decision.",
+        "input_impact": "The investigation is paused. No changes were made and the waiting time does not consume its budget.",
+        "draft_impact": "Only a draft PR/MR was created; it was not merged automatically.",
+        "completed_impact": "The outcome was saved to the investigation history.",
+        "recovered_step": "Nothing else is required: the agent executed the action and verified that the service is healthy and the alert is no longer firing.",
+        "recovered_impact": "The change was applied; recovery was independently verified through health and Prometheus.",
+        "input_title": "Continue the investigation",
+        "input_copy": "The agent exhausted its available sources and identified the missing evidence. Supply it here; you do not need to restart the incident.",
+        "input_question": "What is needed",
+        "input_reason": "Why the agent cannot proceed without it",
+        "input_formats": "Accepted formats",
+        "input_warning": "Remove passwords, tokens and personal data before sending. The system also masks common secret patterns.",
+        "input_text_label": "Paste logs, configuration or your answer",
+        "input_text_help": "Include only the incident-related excerpt; do not send secrets.",
+        "input_file_label": "Or attach a text file",
+        "input_file_help": "TXT, LOG, JSON or YAML; up to 1 MB.",
+        "input_submit": "Send to agent and continue",
+        "input_decline": "I cannot provide this",
+        "input_required": "Add text or a file.",
+        "input_one_source": "Choose one option: text or file.",
+        "input_running": "Saving the evidence and resuming the investigation…",
+        "input_sent": "Evidence accepted. The agent resumed the investigation.",
+        "input_declined": "The request was closed. The incident was handed off for manual investigation.",
     },
 }
 
 STATUS_LABELS = {
     "ru": {
-        "queued": "В очереди", "running": "Расследуется", "awaiting_approval": "Нужно решение",
+        "queued": "В очереди", "running": "Расследуется", "awaiting_input": "Нужны данные", "awaiting_approval": "Нужно решение",
         "completed": "Завершён", "escalated": "Эскалация", "rejected": "Отклонён", "failed": "Ошибка",
     },
     "en": {
-        "queued": "Queued", "running": "Investigating", "awaiting_approval": "Needs decision",
+        "queued": "Queued", "running": "Investigating", "awaiting_input": "Needs evidence", "awaiting_approval": "Needs decision",
         "completed": "Completed", "escalated": "Escalated", "rejected": "Rejected", "failed": "Failed",
     },
 }
 
 STATUS_SYMBOLS = {
-    "queued": "○", "running": "◌", "awaiting_approval": "!", "completed": "✓",
+    "queued": "○", "running": "◌", "awaiting_input": "?", "awaiting_approval": "!", "completed": "✓",
     "escalated": "↑", "rejected": "×", "failed": "×",
 }
 
@@ -188,7 +296,7 @@ def _css() -> str:
     .incident-meta { display:flex;justify-content:space-between;align-items:center;font-size:.71rem;color:var(--muted); }
     .state { display:inline-flex;align-items:center;gap:.35rem;color:var(--ink); }
     .state b { display:grid;place-items:center;width:17px;height:17px;border:1px solid currentColor;border-radius:50%;font-size:.65rem; }
-    .state.awaiting_approval { color:var(--verm);font-weight:700; }
+    .state.awaiting_input,.state.awaiting_approval { color:var(--verm);font-weight:700; }
     .state.completed { color:var(--ok); }
     .state.failed,.state.rejected { color:var(--verm); }
     .case-head { padding:1.1rem 0 1.4rem;border-bottom:1px solid var(--line);margin-bottom:.25rem; }
@@ -196,6 +304,29 @@ def _css() -> str:
     .severity { color:var(--verm); }
     .case-head h1 { font-size:clamp(1.7rem,3vw,2.75rem);line-height:1.03;letter-spacing:-.045em;margin:.65rem 0 .55rem;max-width:850px; }
     .case-deck { color:var(--muted);font-size:.9rem; }
+    .operator-summary { margin:1rem 0 1.1rem;background:var(--ink);color:var(--white);padding:1.1rem 1.2rem 1.2rem;clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,0 100%); }
+    .operator-summary .section-label { color:#d7d8d1;margin:0 0 .3rem; }
+    .operator-summary h2 { color:var(--white);font-size:1.2rem;letter-spacing:-.02em;margin:.15rem 0 1rem; }
+    .operator-grid { display:grid;grid-template-columns:1fr 1.35fr;gap:1rem 1.4rem; }
+    .decision-panel { margin:.4rem 0 1rem;padding:1rem 1.2rem;background:var(--white);border:1px solid var(--verm); }
+    .decision-panel h2 { margin:0 0 .35rem;font-size:1.12rem;letter-spacing:-.02em; }
+    .decision-panel p { margin:0;max-width:72ch;color:var(--ink);font-size:.9rem;line-height:1.5; }
+    .input-panel { margin:.4rem 0 .8rem;padding:1rem 1.2rem;background:var(--white);border:1px solid var(--verm); }
+    .input-panel h2 { margin:0 0 .35rem;font-size:1.12rem;letter-spacing:-.02em; }
+    .input-panel > p { margin:0 0 .9rem;max-width:72ch;color:var(--ink);font-size:.9rem;line-height:1.5; }
+    .input-request { display:grid;grid-template-columns:1.25fr 1fr;gap:1rem 1.4rem;border-top:1px solid var(--line);padding-top:.8rem; }
+    .input-request div { min-width:0; }
+    .input-request b { display:block;color:var(--muted);font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:.25rem; }
+    .input-request span { display:block;font-size:.84rem;line-height:1.48;overflow-wrap:anywhere; }
+    .input-warning { margin:.75rem 0 0!important;color:var(--verm)!important;font-size:.76rem!important;font-weight:620; }
+    .operator-item { min-width:0;border-top:1px solid rgba(255,255,255,.2);padding-top:.55rem; }
+    .operator-item b { display:block;color:var(--line);font-size:.65rem;letter-spacing:.09em;text-transform:uppercase;margin-bottom:.28rem; }
+    .operator-item span { color:var(--white);font-size:.86rem;line-height:1.48;overflow-wrap:anywhere; }
+    .operator-item.next { grid-column:1 / -1;border-color:var(--verm); }
+    .operator-item.next b { color:var(--white); }
+    .case-guide { border:1px solid var(--line);background:rgba(255,254,250,.55);padding:.75rem 1rem;margin-bottom:1rem; }
+    .case-guide summary { cursor:pointer;font-weight:680;font-size:.82rem; }
+    .case-guide p { color:var(--muted);font-size:.79rem;line-height:1.5;margin:.65rem 0 0;max-width:75ch; }
     .spine { position:relative;padding:.6rem 0 .5rem 3.4rem; }
     .spine:before { content:"";position:absolute;left:1.05rem;top:1.35rem;bottom:1.5rem;width:1px;background:var(--line); }
     .fold { position:relative;padding:1.1rem 1.2rem 1.15rem;margin:.65rem 0 1rem;background:rgba(255,254,250,.72);border:1px solid var(--line);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,0 100%); }
@@ -205,10 +336,15 @@ def _css() -> str:
     .fold-title { display:flex;justify-content:space-between;gap:1rem;align-items:baseline;margin-bottom:.8rem; }
     .fold-title h2 { font-size:.94rem;letter-spacing:.02em;margin:0; }
     .fold-title span { font:600 .65rem ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--muted); }
-    .evidence { display:grid;grid-template-columns:90px 1fr;gap:.8rem;padding:.75rem 0;border-top:1px solid var(--line); }
+    .evidence { display:grid;grid-template-columns:minmax(72px,90px) minmax(0,1fr);gap:.8rem;padding:.75rem 0;border-top:1px solid var(--line); }
     .evidence:first-of-type { border-top:0; }
     .evidence-kind { font:650 .66rem ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--verm);text-transform:uppercase;overflow-wrap:anywhere; }
-    .evidence p { margin:0;font-size:.84rem;line-height:1.48;overflow-wrap:anywhere; }
+    .evidence-copy { min-width:0;max-width:100%; }
+    .evidence-preview { font-size:.84rem;line-height:1.48;overflow-wrap:anywhere;word-break:break-word; }
+    .evidence-details { margin-top:.55rem;max-width:100%; }
+    .evidence-details summary { cursor:pointer;color:var(--muted);font-size:.72rem;font-weight:650; }
+    .evidence-raw { box-sizing:border-box;max-width:100%;max-height:22rem;overflow:auto;margin:.55rem 0 0;padding:.8rem;background:var(--ink);color:var(--white);font:500 .72rem/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:normal;overflow-wrap:anywhere;word-break:break-word; }
+    .evidence-source { display:inline-block;margin-top:.45rem;color:var(--verm);font-size:.72rem;font-weight:650;text-underline-offset:2px; }
     .hypothesis { border-top:1px solid var(--line);padding:.85rem 0 0;margin-top:.7rem; }
     .hypothesis:first-of-type { border-top:0;margin-top:0;padding-top:0; }
     .hyp-row { display:flex;gap:1rem;justify-content:space-between;align-items:flex-start; }
@@ -233,11 +369,15 @@ def _css() -> str:
     .tech { margin-top:1.25rem;border-top:1px solid var(--line);padding-top:1rem; }
     div[data-testid="stButton"] button { border-radius:0;min-height:2.45rem;border:1px solid var(--ink);font-weight:650;background:transparent; }
     div[data-testid="stButton"] button:hover { border-color:var(--verm);color:var(--verm); }
+    div[data-testid="stButton"] button:focus-visible,
+    div[data-testid="stTextArea"] textarea:focus-visible,
+    div[data-testid="stFileUploader"] button:focus-visible { outline:2px solid var(--verm);outline-offset:2px; }
     div[data-testid="stSegmentedControl"] { margin-bottom:.65rem; }
     div[data-testid="stSegmentedControl"] button { border-radius:0!important; }
     @keyframes breathe { 50% { box-shadow:0 0 0 7px rgba(201,71,53,.12); } }
     @media (prefers-reduced-motion:reduce) { * { animation:none!important;transition:none!important; } }
-    @media (max-width:900px) { .block-container{padding:1rem}.brand-sub{display:none}.lang-switch a{min-width:42px;padding:.5rem}.spine{padding-left:2.8rem}.fold-node{left:-2.55rem}.action-grid{grid-template-columns:1fr}.evidence{grid-template-columns:72px 1fr;gap:.65rem} }
+    @media (max-width:1100px) { div[data-testid="stHorizontalBlock"]{flex-direction:column} div[data-testid="stColumn"]{width:100%!important;flex:1 1 100%!important}.operator-grid{grid-template-columns:1fr}.operator-item.next{grid-column:auto} }
+    @media (max-width:900px) { .block-container{padding:1rem}.brand-sub{display:none}.lang-switch a{min-width:42px;padding:.5rem}.spine{padding-left:2.8rem}.fold-node{left:-2.55rem}.action-grid,.input-request{grid-template-columns:1fr}.evidence{grid-template-columns:1fr;gap:.35rem}.evidence-kind{margin-top:.1rem} }
     </style>
     """
 
@@ -298,6 +438,121 @@ def _evidence_summary(item: dict[str, Any]) -> str:
         return summary
 
 
+def _safe_evidence_text(value: str) -> str:
+    return escape(value).replace("`", "&#96;")
+
+
+def _evidence_html(item: dict[str, Any], t: dict[str, str]) -> str:
+    summary = _evidence_summary(item)
+    compact = " ".join(summary.split())
+    preview = compact if len(compact) <= 260 else f"{compact[:257].rstrip()}…"
+    needs_details = "\n" in summary or len(summary) > 260
+    details = ""
+    if needs_details:
+        raw = _safe_evidence_text(summary).replace("\n", "<br>")
+        details = (
+            f'<details class="evidence-details"><summary>{escape(t["raw_evidence"])}</summary>'
+            f'<div class="evidence-raw">{raw}</div></details>'
+        )
+    source_uri = str(item.get("source_uri", ""))
+    source = ""
+    if source_uri.startswith(("https://", "http://")):
+        safe_uri = escape(source_uri, quote=True)
+        source = (
+            f'<a class="evidence-source" href="{safe_uri}" target="_blank" '
+            f'rel="noopener noreferrer">{escape(t["source_link"])}</a>'
+        )
+    return (
+        f'<div class="evidence"><div class="evidence-kind">'
+        f'{escape(_evidence_label(item))}</div><div class="evidence-copy">'
+        f'<div class="evidence-preview">{_safe_evidence_text(preview)}</div>'
+        f'{details}{source}</div></div>'
+    )
+
+
+def _operator_guidance(
+    record: dict[str, Any], t: dict[str, str]
+) -> dict[str, str]:
+    status = str(record.get("status", "queued"))
+    state = record.get("state") or {}
+    hypotheses = list(state.get("hypotheses") or [])
+    leading = max(
+        hypotheses,
+        key=lambda item: float(item.get("confidence", 0)),
+        default=None,
+    )
+    finding = (
+        str(leading.get("statement", t["finding_pending"]))
+        if leading
+        else t["finding_pending"]
+    )
+    required_checks = list((leading or {}).get("required_checks") or [])
+    result = state.get("action_result") or {}
+    recovery_verified = state.get("recovery_verified") is True
+    event = record.get("event") or {}
+    kind = str(event.get("kind", ""))
+
+    headline = t.get(f"{status}_headline", STATUS_LABELS["en"].get(status, status))
+    if status in {"queued", "running"}:
+        next_step = t["wait_step"]
+        impact = t["no_changes"]
+    elif status == "awaiting_input":
+        next_step = t["input_step"]
+        impact = t["input_impact"]
+    elif status == "awaiting_approval":
+        next_step = t["approval_step"]
+        impact = t["approval_impact"]
+    elif status == "escalated":
+        if kind == "runtime_alert":
+            next_step = t["runtime_escalation_step"]
+        elif kind == "ci_failure":
+            next_step = t["ci_escalation_step"]
+        else:
+            next_step = (
+                str(required_checks[0]) if required_checks else t["escalation_step"]
+            )
+        impact = t["no_changes"]
+    elif status == "failed":
+        next_step = t["failed_step"]
+        impact = t["no_changes"]
+    elif status == "rejected":
+        next_step = t["completed_step"]
+        impact = t["no_changes"]
+    elif recovery_verified:
+        next_step = t["recovered_step"]
+        impact = t["recovered_impact"]
+    else:
+        next_step = t["completed_step"]
+        impact = t["draft_impact"] if result.get("external_reference") else t["completed_impact"]
+
+    return {
+        "headline": headline,
+        "finding": finding,
+        "next_step": next_step,
+        "impact": impact,
+    }
+
+
+def _operator_summary_html(
+    record: dict[str, Any], t: dict[str, str]
+) -> str:
+    event = record.get("event") or {}
+    guidance = _operator_guidance(record, t)
+    happened = (
+        f'{event.get("title", "—")} · {event.get("service", "—")} · '
+        f'{event.get("severity", "unknown")}'
+    )
+    return f"""<section class="operator-summary">
+    <div class="section-label">{escape(t['operator_summary'])}</div>
+    <h2>{escape(guidance['headline'])}</h2>
+    <div class="operator-grid">
+      <div class="operator-item"><b>{escape(t['what_happened'])}</b><span>{escape(happened)}</span></div>
+      <div class="operator-item"><b>{escape(t['agent_found'])}</b><span>{escape(guidance['finding'])}</span></div>
+      <div class="operator-item next"><b>{escape(t['your_next_step'])}</b><span>{escape(guidance['next_step'])}</span></div>
+      <div class="operator-item"><b>{escape(t['impact'])}</b><span>{escape(guidance['impact'])}</span></div>
+    </div></section>"""
+
+
 def _humanize_error(error: str, t: dict[str, str]) -> tuple[str, bool]:
     if error == "budget:tool_call_budget_truncated":
         return t["budget_truncated"], True
@@ -326,6 +581,71 @@ def _fold(number: str, title: str, body: str, *, meta: str = "", active: bool = 
     <div class="fold-title"><h2>{escape(title)}</h2><span>{escape(meta)}</span></div>{body}</section>"""
 
 
+def _render_input_request(
+    record: dict[str, Any], t: dict[str, str]
+) -> None:
+    state = record.get("state") or {}
+    request = state.get("information_request") or {}
+    request_id = str(request.get("request_id", ""))
+    question = str(request.get("question") or t["input_step"])
+    reason = str(
+        request.get("reason")
+        or request.get("evidence_gap")
+        or t["finding_pending"]
+    )
+    formats = ", ".join(
+        str(item).upper()
+        for item in request.get("accepted_input_types", [])
+    ) or "TXT, LOG, JSON, YAML"
+    warning = str(request.get("sensitive_data_warning") or t["input_warning"])
+    st.markdown(
+        f"""<section class="input-panel">
+        <h2>{escape(t['input_title'])}</h2><p>{escape(t['input_copy'])}</p>
+        <div class="input-request">
+          <div><b>{escape(t['input_question'])}</b><span>{escape(question)}</span></div>
+          <div><b>{escape(t['input_reason'])}</b><span>{escape(reason)}</span></div>
+          <div><b>{escape(t['input_formats'])}</b><span>{escape(formats)}</span></div>
+        </div><p class="input-warning">{escape(warning)}</p></section>""",
+        unsafe_allow_html=True,
+    )
+    with st.form(f"evidence-{record['incident_id']}", clear_on_submit=False):
+        evidence_text = st.text_area(
+            t["input_text_label"],
+            height=160,
+            help=t["input_text_help"],
+            placeholder=question,
+        )
+        evidence_file = st.file_uploader(
+            t["input_file_label"],
+            type=["txt", "log", "json", "yaml", "yml"],
+            help=t["input_file_help"],
+        )
+        submit_col, decline_col = st.columns([1.7, 1])
+        with submit_col:
+            submitted = st.form_submit_button(
+                t["input_submit"], type="primary", use_container_width=True
+            )
+        with decline_col:
+            declined = st.form_submit_button(
+                t["input_decline"], use_container_width=True
+            )
+    if submitted:
+        if evidence_text.strip() and evidence_file is not None:
+            st.error(t["input_one_source"])
+        elif not evidence_text.strip() and evidence_file is None:
+            st.error(t["input_required"])
+        else:
+            _submit_operator_evidence(
+                record,
+                request_id=request_id,
+                text=evidence_text.strip(),
+                uploaded_file=evidence_file,
+                t=t,
+            )
+    elif declined:
+        _decline_operator_request(record, t)
+
+
 def _render_investigation(record: dict[str, Any], t: dict[str, str], language: str) -> None:
     event = record.get("event", {})
     state = record.get("state") or {}
@@ -347,14 +667,36 @@ def _render_investigation(record: dict[str, Any], t: dict[str, str], language: s
     result = state.get("action_result") or {}
     remediation = state.get("remediation_report") or {}
 
+    st.markdown(_operator_summary_html(record, t), unsafe_allow_html=True)
+    if status == "awaiting_input":
+        _render_input_request(record, t)
+    if status == "awaiting_approval":
+        st.markdown(
+            f'<section class="decision-panel"><h2>{escape(t["decision_title"])}</h2>'
+            f'<p>{escape(t["decision_copy"])}</p></section>',
+            unsafe_allow_html=True,
+        )
+        approve_col, reject_col, _ = st.columns([1.5, 1, 2.2])
+        with approve_col:
+            if st.button(t["approve"], type="primary", use_container_width=True):
+                _submit_decision(record, True, t)
+        with reject_col:
+            if st.button(t["reject"], use_container_width=True):
+                _submit_decision(record, False, t)
+        st.caption(t["approval_note"])
+    st.markdown(
+        f"""<details class="case-guide"><summary>{escape(t['how_to_read'])}</summary>
+        <p>{escape(t['guide_copy'])}</p></details>""",
+        unsafe_allow_html=True,
+    )
+
     signal_body = f"""<div class="action-name">{escape(str(event.get('title','')))}</div>
     <div class="micro">{escape(str(event.get('kind','')).replace('_',' '))} · {escape(str(event.get('external_id','—')))}</div>"""
     folds = [_fold("01", t["signal"], signal_body, meta=_source_label(str(event.get("source", ""))))]
 
     visible_evidence = _visible_evidence(evidence)
     evidence_body = "".join(
-        f"""<div class="evidence"><div class="evidence-kind">{escape(_evidence_label(item))}</div>
-        <p>{escape(_evidence_summary(item))}</p></div>""" for item in visible_evidence
+        _evidence_html(item, t) for item in visible_evidence
     ) or f'<p class="micro">{escape(t["no_incidents_hint"])}</p>'
     evidence_meta = f"{len(evidence)} {t['evidence_count']}"
     if len(visible_evidence) < len(evidence):
@@ -403,27 +745,71 @@ def _render_investigation(record: dict[str, Any], t: dict[str, str], language: s
     folds.append(_fold("05", t["action"], action_body, meta=str(action.get("risk", "pending")), active=status == "awaiting_approval"))
 
     if result:
-        result_body = f'<div class="action-name">{escape(str(result.get("summary", "")))}</div>'
+        recovery = state.get("recovery_summary") or "—"
+        result_body = (
+            f'<div class="action-name">{escape(str(result.get("summary", "")))}</div>'
+            f'<div class="datum"><b>{escape(t["recovery_check"])}</b>'
+            f'<span>{escape(str(recovery))}</span></div>'
+        )
         folds.append(_fold("06", t["result"], result_body, meta="success" if result.get("success") else "failed"))
 
     st.markdown(f'<main class="spine">{"".join(folds)}</main>', unsafe_allow_html=True)
 
-    if status == "awaiting_approval":
-        st.caption(t["approval_note"])
-        approve_col, reject_col, _ = st.columns([1.3, 1, 2.5])
-        with approve_col:
-            if st.button(t["approve"], type="primary", use_container_width=True):
-                _submit_decision(record, True, t)
-        with reject_col:
-            if st.button(t["reject"], use_container_width=True):
-                _submit_decision(record, False, t)
-
-
 def _submit_decision(record: dict[str, Any], approved: bool, t: dict[str, str]) -> None:
     client: IncidentAPIClient = st.session_state.api_client
     try:
-        client.decide_approval(str(record["incident_id"]), approved=approved)
-        st.toast(t["approved"] if approved else t["rejected"], icon="✓" if approved else "×")
+        if approved:
+            with st.spinner(t["verification_running"]):
+                client.decide_approval(str(record["incident_id"]), approved=True)
+        else:
+            client.decide_approval(str(record["incident_id"]), approved=False)
+        st.toast(
+            t["approved"] if approved else t["rejected"],
+            icon="✅" if approved else "❌",
+        )
+        st.rerun()
+    except DashboardAPIError as error:
+        st.error(str(error))
+
+
+def _submit_operator_evidence(
+    record: dict[str, Any],
+    *,
+    request_id: str,
+    text: str,
+    uploaded_file: Any,
+    t: dict[str, str],
+) -> None:
+    client: IncidentAPIClient = st.session_state.api_client
+    try:
+        with st.spinner(t["input_running"]):
+            if uploaded_file is not None:
+                client.submit_file_evidence(
+                    str(record["incident_id"]),
+                    request_id=request_id,
+                    filename=str(uploaded_file.name),
+                    content=uploaded_file.getvalue(),
+                    media_type=uploaded_file.type,
+                )
+            else:
+                client.submit_text_evidence(
+                    str(record["incident_id"]),
+                    request_id=request_id,
+                    text=text,
+                )
+        st.toast(t["input_sent"], icon="✅")
+        st.rerun()
+    except DashboardAPIError as error:
+        st.error(str(error))
+
+
+def _decline_operator_request(
+    record: dict[str, Any], t: dict[str, str]
+) -> None:
+    client: IncidentAPIClient = st.session_state.api_client
+    try:
+        client.decline_information_request(str(record["incident_id"]))
+        st.toast(t["input_declined"], icon="↗️")
         st.rerun()
     except DashboardAPIError as error:
         st.error(str(error))
@@ -474,7 +860,7 @@ def main() -> None:
         )
         groups = {
             t["active"]: {"queued", "running", "escalated"},
-            t["approval"]: {"awaiting_approval"},
+            t["approval"]: {"awaiting_input", "awaiting_approval"},
             t["resolved"]: {"completed", "rejected", "failed"},
         }
         visible = [item for item in incidents if filter_value == t["all"] or item.get("status") in groups.get(filter_value, set())]

@@ -25,7 +25,7 @@ class DashboardAPIError(RuntimeError):
 
 
 class IncidentAPIClient:
-    def __init__(self, base_url: str, token: str, *, timeout: float = 10) -> None:
+    def __init__(self, base_url: str, token: str, *, timeout: float = 70) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
@@ -62,6 +62,56 @@ class IncidentAPIClient:
         )
         if not isinstance(payload, dict):
             raise DashboardAPIError("The API returned an invalid approval result.")
+        return payload
+
+    def submit_text_evidence(
+        self,
+        incident_id: str,
+        *,
+        request_id: str,
+        text: str,
+    ) -> dict[str, Any]:
+        payload = self._request(
+            "POST",
+            f"/api/incidents/{incident_id}/evidence",
+            json={"request_id": request_id, "text": text},
+        )
+        if not isinstance(payload, dict):
+            raise DashboardAPIError("The API returned an invalid evidence result.")
+        return payload
+
+    def submit_file_evidence(
+        self,
+        incident_id: str,
+        *,
+        request_id: str,
+        filename: str,
+        content: bytes,
+        media_type: str | None = None,
+    ) -> dict[str, Any]:
+        payload = self._request(
+            "POST",
+            f"/api/incidents/{incident_id}/evidence/file",
+            data={"request_id": request_id},
+            files={
+                "file": (
+                    filename,
+                    content,
+                    media_type or "text/plain",
+                )
+            },
+        )
+        if not isinstance(payload, dict):
+            raise DashboardAPIError("The API returned an invalid evidence result.")
+        return payload
+
+    def decline_information_request(self, incident_id: str) -> dict[str, Any]:
+        payload = self._request(
+            "POST",
+            f"/api/incidents/{incident_id}/evidence/decline",
+        )
+        if not isinstance(payload, dict):
+            raise DashboardAPIError("The API returned an invalid decline result.")
         return payload
 
     def health(self) -> bool:

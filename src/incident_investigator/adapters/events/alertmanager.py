@@ -15,10 +15,13 @@ class InvalidWebhookToken(ValueError):
 class AlertmanagerEventAdapter:
     name = "alertmanager"
 
-    def __init__(self, shared_token: str) -> None:
+    def __init__(
+        self, shared_token: str, *, allowed_actions: tuple[str, ...] = ()
+    ) -> None:
         if not shared_token:
             raise ValueError("Alertmanager shared token must not be empty")
         self._shared_token = shared_token
+        self._allowed_actions = allowed_actions
 
     def verify(self, body: bytes, headers: Mapping[str, str]) -> None:
         del body
@@ -56,6 +59,9 @@ class AlertmanagerEventAdapter:
             alert_name = str(labels.get("alertname", "unknown-alert"))
             generator_url = str(alert.get("generatorURL", ""))
 
+            started_at = datetime.fromisoformat(
+                str(alert["startsAt"]).replace("Z", "+00:00")
+            )
             incidents.append(
                 IncidentEvent(
                     source=IncidentSource.ALERTMANAGER,
@@ -64,16 +70,17 @@ class AlertmanagerEventAdapter:
                     service=service,
                     title=str(annotations.get("summary") or alert_name),
                     severity=str(labels.get("severity", "unknown")),
-                    started_at=datetime.fromisoformat(
-                        str(alert["startsAt"]).replace("Z", "+00:00")
+                    started_at=started_at,
+                    correlation_id=(
+                        f"alertmanager:{fingerprint}:{started_at.isoformat()}"
                     ),
-                    correlation_id=f"alertmanager:{fingerprint}",
                     evidence_refs=(generator_url,) if generator_url else (),
                     metadata={
                         "alertname": alert_name,
                         "labels": dict(labels),
                         "description": annotations.get("description"),
                         "group_key": payload.get("groupKey"),
+                        "allowed_actions": list(self._allowed_actions),
                     },
                 )
             )

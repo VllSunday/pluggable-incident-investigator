@@ -84,6 +84,19 @@ queue и сразу отвечает `202`; worker продолжает durable 
 Durable report хранит только пути, тип операций и hashes — не полное содержимое source files.
 `publish` повторно сверяет hashes и только после HitL отправляет один commit через SCM API.
 
+### Operator evidence continuation
+
+Если Reflexion определяет конкретный пробел в доказательствах, ядро не завершает инцидент
+общей эскалацией. Оно создаёт структурированный `InformationRequest` с вопросом, причиной,
+допустимыми форматами и предупреждением о секретах, затем переводит durable thread в
+`awaiting_input`.
+
+Dashboard принимает один текстовый фрагмент или файл TXT/LOG/JSON/YAML. Вход ограничен по
+размеру, тип файла и UTF-8, типовые секреты маскируются, а raw SHA-256 и provenance
+сохраняются в audit trail. После отправки тот же LangGraph checkpoint возобновляется с новым
+`operator_evidence`; история гипотез, budgets и correlation ID не теряются. Оператор также
+может отказаться от передачи данных — тогда thread штатно завершается ручной эскалацией.
+
 ## 5. Security boundary
 
 LLM никогда не получает shell без ограничений. Она выбирает только зарегистрированный tool
@@ -122,6 +135,7 @@ Telegram является notification adapter, а не частью orchestrati
 - incident.received;
 - investigation.completed;
 - approval.required;
+- input.required;
 - draft_pr.created;
 - recovery.verified;
 - investigation.escalated.

@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -13,12 +15,19 @@ from incident_investigator.adapters.events import (
     GitLabCIEventAdapter,
 )
 from incident_investigator.api import create_app
-from incident_investigator.domain import IncidentEvent
+from incident_investigator.application import IncidentRecord, IncidentStatus
+from incident_investigator.domain import (
+    IncidentEvent,
+    IncidentKind,
+    IncidentSource,
+)
 
 
 class RecordingSink:
     def __init__(self) -> None:
         self.incidents: list[IncidentEvent] = []
+        self.submissions = []
+        self.declined = []
 
     async def accept(self, incident: IncidentEvent) -> None:
         self.incidents.append(incident)
@@ -26,6 +35,35 @@ class RecordingSink:
     async def list_incidents(self, limit: int = 100):
         del limit
         return []
+
+    async def submit_evidence(self, incident_id, submission):
+        self.submissions.append((incident_id, submission))
+        return control_record(incident_id)
+
+    async def decline_information_request(self, incident_id):
+        self.declined.append(incident_id)
+        return control_record(incident_id, status=IncidentStatus.ESCALATED)
+
+
+def control_record(
+    incident_id=None, *, status: IncidentStatus = IncidentStatus.RUNNING
+) -> IncidentRecord:
+    current_id = incident_id or uuid4()
+    return IncidentRecord(
+        incident_id=current_id,
+        correlation_id=f"test:{current_id}",
+        event=IncidentEvent(
+            incident_id=current_id,
+            source=IncidentSource.ALERTMANAGER,
+            kind=IncidentKind.RUNTIME_ALERT,
+            external_id="fp-test",
+            service="payments",
+            title="High error rate",
+            started_at=datetime.now(UTC),
+            correlation_id=f"test:{current_id}",
+        ),
+        status=status,
+    )
 
 
 def app_and_sink():
@@ -116,3 +154,57 @@ async def test_incident_api_requires_admin_token() -> None:
 
     assert unauthorized.status_code == 401
     assert authorized.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_operator_can_submit_text_evidence() -> None:
+    app, sink = app_and_sink()
+    incident_id = uuid4()
+    request_id = uuid4()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/incidents/{incident_id}/evidence",
+            headers={"authorization": "Bearer test-admin-token-long"},
+            json={
+                "request_id": str(request_id),
+                "text": "ConnectionRefusedError from the database client",
+                "source_name": "operator-note.txt",
+                "media_type": "text/plain",
+            },
+        )
+
+    assert response.status_code == 200
+    assert sink.submissions[0][1].request_id == request_id
+    assert "ConnectionRefusedError" in sink.submissions[0][1].text
+
+
+@pytest.mark.asyncio
+async def test_operator_file_upload_rejects_unsupported_type() -> None:
+    app, _ = app_and_sink()
+    incident_id = uuid4()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/incidents/{incident_id}/evidence/file",
+            headers={"authorization": "Bearer test-admin-token-long"},
+            data={"request_id": str(uuid4())},
+            files={"file": ("dump.bin", b"binary", "application/octet-stream")},
+        )
+
+    assert response.status_code == 415
+
+
+@pytest.mark.asyncio
+async def test_operator_can_decline_information_request() -> None:
+    app, sink = app_and_sink()
+    incident_id = uuid4()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/api/incidents/{incident_id}/evidence/decline",
+            headers={"authorization": "Bearer test-admin-token-long"},
+        )
+
+    assert response.status_code == 200
+    assert sink.declined == [incident_id]

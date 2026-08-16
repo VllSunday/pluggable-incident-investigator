@@ -1,138 +1,133 @@
-# Pluggable Multi-Agent Incident Investigator
+# Incident Investigator
 
-Capstone-проект: расширяемая система расследования CI- и runtime-инцидентов.
-Один orchestration core принимает унифицированное событие, собирает доказательства,
-проверяет гипотезы, останавливается перед опасным действием и проверяет восстановление.
+Incident Investigator принимает CI-сбой или runtime-alert, сам собирает доступные
+доказательства, проверяет несколько гипотез и предлагает только проверяемое безопасное
+действие. Изменение выполняется после подтверждения человека, а затем агент отдельно
+проверяет восстановление системы.
 
-## Текущий MVP
+Это не ещё один чат с логами. Ядро хранит durable state расследования, ограничивает инструменты
+политиками и бюджетами, переживает перезапуск, умеет запросить недостающие данные у оператора
+и оставляет воспроизводимый audit trail.
 
-- Источники событий: GitHub Actions `workflow_run`, GitLab `Pipeline Hook` и Prometheus Alertmanager.
-- Среды исполнения: тестовые GitHub/GitLab-репозитории и локальный Docker Compose runtime-стенд.
-- Критические действия: создание issue/PR и перезапуск demo-контейнера — только после approval.
-- Любая интеграция подключается через контракт адаптера; ядро не импортирует GitHub,
-  Prometheus, Docker или Telegram SDK.
-- SQLite durable queue и LangGraph checkpoints переживают перезапуск одного server process.
-- Connected mode использует OpenAI Structured Outputs; demo mode не делает вид, что умеет
-  диагностировать без evidence providers.
-- Для CI-инцидентов доступен opt-in remediation pipeline: проверенный unified diff →
-  изолированная workspace → allowlisted Docker checks → critic → HitL → один commit и
-  draft GitHub PR/GitLab MR.
+## Попробовать за пять минут
 
-## Структура
+Нужен только запущенный Docker Desktop. Дополнительные репозитории, токены и OpenAI API key
+для первого знакомства не требуются.
 
-```text
-src/incident_investigator/
-  domain/       # стабильная модель предметной области
-  core/         # policy, budgets, tool runtime, orchestration graph
-  adapters/     # GitHub и Alertmanager на границе системы
-  api/          # webhook/API transport
-docs/           # архитектурные решения и roadmap
-tests/          # contract, policy и failure-path tests
-```
-
-## Локальная разработка
+Windows:
 
 ```powershell
-uv sync --extra dev
-uv run pytest
-uv run ruff check .
+.\demo.ps1
 ```
 
-HTTP-слой создаётся через `incident_investigator.api.create_app`. Composition root с
-durable SQLite queue/checkpoints запускается командой `uv run incident-investigator`.
-
-В отдельном терминале запустите двуязычный operator dashboard:
+Linux/macOS:
 
 ```bash
-uv sync --extra dev --extra ui
-uv run streamlit run src/incident_investigator/ui/app.py
+sh demo.sh
 ```
 
-Откройте `http://127.0.0.1:8501`. Dashboard использует
-`INVESTIGATOR_API_URL` (по умолчанию `http://127.0.0.1:8000`) и тот же
-`INVESTIGATOR_ADMIN_API_TOKEN`, что и API.
-Режим `demo` принимает события и проверяет полный transport/persistence flow, но намеренно
-эскалирует расследование до подключения реальных evidence providers.
+Затем откройте [http://127.0.0.1:8501](http://127.0.0.1:8501).
 
-Инструкции локальной и серверной установки: [`docs/deployment.md`](docs/deployment.md).
-Настройка traces и ground-truth eval: [`docs/observability.md`](docs/observability.md).
-Сценарий защиты: [`docs/demo-runbook.md`](docs/demo-runbook.md). Границы безопасности:
-[`docs/threat-model.md`](docs/threat-model.md).
-Готовая презентация: [`docs/capstone-defense.pptx`](docs/capstone-defense.pptx).
+Стенд внутри этого репозитория сам:
 
-## Safe remediation
+1. запускает неисправное приложение;
+2. генерирует трафик и метрики;
+3. поднимает Prometheus и Alertmanager;
+4. отправляет настоящий webhook;
+5. собирает метрики и структурированные логи;
+6. останавливается перед rollback и ждёт вашего решения;
+7. после approval применяет узкое исправление и проверяет health и исчезновение alert.
 
-Remediation намеренно выключен по умолчанию. Для включения нужны connected mode,
-GitHub/GitLab API token, локальный Docker daemon и заранее подготовленный sandbox image.
-Команды проверок задаются оператором в `INVESTIGATOR_REMEDIATION_CHECK_PROFILES`; модель
-выбирает только имя существующего профиля и не получает произвольный shell.
+Локальный smoke test использует честно обозначенный детерминированный fixture-engine, поэтому
+проверяет всю инфраструктуру без оплаты LLM. Для проверки реального модельного рассуждения
+добавьте OpenAI key и включите `INVESTIGATOR_MODE=connected` по инструкции ниже.
 
-После успешных проверок dashboard показывает изменённые пути, exit codes, hash patch и
-вердикт critic. До approval ветка и PR/MR не существуют. Если человек отклоняет изменение,
-изолированная workspace удаляется.
+Остановить стенд:
 
-## Воспроизводимая demo-защита
+```powershell
+.\demo.ps1 down
+```
 
-Docker Desktop должен быть запущен. Одна команда собирает отдельный sandbox image и
-выполняет контролируемый сценарий с настоящими Docker-проверками:
+## Что уже работает
+
+- GitHub Actions `workflow_run`, GitLab Pipeline Hook и Prometheus Alertmanager.
+- Единая модель события для CI- и runtime-инцидентов.
+- Цикл evidence → hypotheses → verification → Reflexion → action → recovery.
+- SQLite queue и LangGraph checkpoints, переживающие перезапуск процесса.
+- Таймауты, retry, iteration/tool budgets и безопасная эскалация.
+- Human-in-the-Loop для runtime-действий и публикации draft PR/MR.
+- Запрос недостающего контекста через dashboard: текст или TXT/LOG/JSON/YAML.
+- Маскирование типовых секретов, provenance и SHA-256 операторских данных.
+- Изолированный remediation pipeline: patch → Docker tests/lint → critic → approval.
+- Draft GitHub PR или GitLab MR без автоматического merge.
+- Telegram-уведомления и LangSmith tracing.
+- Русский и английский интерфейс.
+
+## Встроенный CI-сценарий
+
+В `demo/ci-python-app` находится намеренно сломанное приложение. Оно позволяет проверить
+поиск причины, patch, pytest, Ruff и critic полностью локально:
 
 ```powershell
 uv sync --extra dev --extra ui
 uv run python scripts/run_remediation_demo.py
 ```
 
-Demo сначала доказывает, что исходный retry service действительно падает, затем применяет
-patch, выполняет `pytest` и `ruff` без сети, останавливает LangGraph на approval и после
-симулированного решения формирует draft-PR payload. Во внешний GitHub ничего не отправляется.
+Во внешний GitHub или GitLab этот сценарий ничего не отправляет.
 
-Fixture находится в [`demo/ci-python-app`](demo/ci-python-app), а real-Docker test — в
-[`tests/integration/test_real_docker_remediation.py`](tests/integration/test_real_docker_remediation.py).
+## Подключение к своему проекту
 
-Отдельный runtime-сценарий поднимает неисправное приложение, Prometheus, настоящее alert
-rule и Alertmanager. Webhook проходит через FastAPI и durable worker, а PromQL-шаблоны
-остаются серверной конфигурацией и не генерируются моделью:
+Создавать отдельный «репозиторий инцидентов» не нужно. Один раз разверните Investigator на
+сервере, затем подключайте к нему существующие проекты:
+
+- GitHub/GitLab отправляют webhook о провалившемся pipeline;
+- токен с минимальными правами позволяет читать job log и diff;
+- Prometheus Alertmanager отправляет firing alerts;
+- evidence adapters читают метрики, логи и deployment context;
+- action adapter описывает только разрешённые для вашей среды операции.
+
+Начинайте в read-only shadow mode. После накопления успешных расследований включайте draft
+PR/MR, а runtime-actions оставляйте за allowlist и approval. Практический план подключения,
+права и ограничения текущей версии описаны в
+[Production integration guide](docs/production-integration.md).
+
+## Режимы
+
+| Режим | Назначение | LLM |
+|---|---|---|
+| `demo` | Проверка webhook, queue, checkpoints и UI | Нет |
+| `fixture` | Полный встроенный runtime smoke test | Нет |
+| `connected` | Настоящее расследование по собранным evidence | OpenAI |
+
+## Архитектура в одном абзаце
+
+Event adapters проверяют подпись и нормализуют внешние payload в `IncidentEvent`. Durable
+LangGraph управляет расследованием. Read-only evidence providers возвращают факты с provenance.
+LLM формирует структурированные гипотезы, но policy engine, sandbox, approval и recovery
+verification находятся вне модели. GitHub, GitLab, Prometheus, Telegram и конкретная LLM
+остаются заменяемыми адаптерами.
+
+Подробнее: [архитектура](docs/architecture.md), [модель угроз](docs/threat-model.md),
+[observability и evals](docs/observability.md), [установка](docs/deployment.md),
+[сценарий защиты](docs/demo-runbook.md),
+[аудит по книге об AI-агентах](docs/book-review.md).
+
+## Что проект не обещает
+
+Investigator не может без настройки понимать любую инфраструктуру и не должен получать
+неограниченный shell или административные credentials. Универсален lifecycle расследования;
+форматы логов, runbooks и разрешённые действия задаются адаптерами конкретной среды.
+
+Текущая SQLite-реализация рассчитана на ноутбук или один server process. Для нескольких
+replicas очередь и checkpoints нужно перенести в PostgreSQL.
+
+## Разработка
 
 ```powershell
-docker compose -f compose.yaml -f compose.runtime.yaml up -d --build
+uv sync --extra dev --extra ui
+uv run ruff check src tests scripts demo
+uv run pytest
 ```
 
-Через несколько секунд incident появится в dashboard на `http://127.0.0.1:8501`.
-Prometheus и Alertmanager доступны на портах `9090` и `9093`. Стенд намеренно генерирует
-80% ошибок; остановка выполняется командой
-`docker compose -f compose.yaml -f compose.runtime.yaml down`.
-
-Для настоящего GitHub Actions run сначала передайте read/write token в process environment,
-не печатая его в terminal history:
-
-```powershell
-$env:INVESTIGATOR_GITHUB_API_TOKEN = gh auth token
-uv run python scripts/run_connected_github_demo.py `
-  --repository VllSunday/incident-investigator-demo-ci `
-  --run-id <RUN_ID> `
-  --head-sha <HEAD_SHA> `
-  --evidence-only
-```
-
-Для реального GitLab pipeline используется симметричная команда; токен читается из
-игнорируемого `.env`:
-
-```powershell
-uv run python scripts/run_connected_gitlab_demo.py `
-  --repository AllSunday/incident-investigator-demo-ci `
-  --pipeline-id <PIPELINE_ID> `
-  --sha <COMMIT_SHA> `
-  --evidence-only
-```
-
-Без `--approve` connected-run не создаёт ветку или merge request. Настоящий draft MR
-публикуется только после успешных sandbox checks и явного `--approve`.
-
-После заполнения `INVESTIGATOR_OPENAI_API_KEY` уберите `--evidence-only`. Без `--approve`
-система завершит investigation и sandbox validation, но не создаст ветку. Настоящий draft PR
-создаётся только при явном `--approve`.
-
-## Что проект намеренно не обещает
-
-Система не является универсальным SRE, который без настройки понимает любую инфраструктуру.
-Универсальны модель события и цикл расследования. Форматы данных, доступные инструменты,
-credentials, runbooks и разрешённые действия задаются адаптерами и конфигурацией окружения.
+Проект использует Python 3.12+, FastAPI, LangGraph, Streamlit, OpenAI Structured Outputs,
+Docker sandbox и LangSmith.

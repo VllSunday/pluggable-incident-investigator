@@ -23,15 +23,17 @@ from incident_investigator.engines.openai_engine import (
     OpenAIPatchRepairer,
     PatchEdit,
     RepairedPatch,
+    RuntimeRollbackRequest,
 )
 
 
 class FakeResponses:
     def __init__(self, outputs) -> None:
         self.outputs = iter(outputs)
+        self.calls = []
 
     async def parse(self, **kwargs):
-        del kwargs
+        self.calls.append(kwargs)
         return SimpleNamespace(output_parsed=next(self.outputs))
 
 
@@ -51,6 +53,17 @@ def incident() -> IncidentEvent:
         correlation_id="github:acme/repo:42",
         metadata={"allowed_actions": ["create_draft_pr"]},
     )
+
+
+@pytest.mark.asyncio
+async def test_engine_requests_configured_operator_language() -> None:
+    client = FakeClient([HypothesisBatch(hypotheses=[])])
+    engine = OpenAIInvestigationEngine(client, output_language="ru")
+
+    await engine.generate_hypotheses(incident(), [])
+
+    system_prompt = client.responses.calls[0]["input"][0]["content"]
+    assert "operator-facing explanations in Russian" in system_prompt
 
 
 @pytest.mark.asyncio
@@ -186,6 +199,45 @@ async def test_engine_verifies_high_confidence_ci_hypothesis_by_evidence_quorum(
 
 
 @pytest.mark.asyncio
+async def test_engine_verifies_runtime_hypothesis_by_evidence_quorum() -> None:
+    log = EvidenceItem(
+        kind="application_log",
+        source_uri="runtime-logs://payments/window",
+        summary="runtime_override configured_error_fraction=0.8",
+    )
+    metric = EvidenceItem(
+        kind="metric_snapshot",
+        source_uri="prometheus://query/error_ratio",
+        summary='{"value":"0.8"}',
+    )
+    engine = OpenAIInvestigationEngine(
+        FakeClient(
+            [
+                HypothesisBatch(
+                    hypotheses=[
+                        HypothesisCandidate(
+                            statement="The runtime override causes the 80% error ratio",
+                            confidence=0.99,
+                            supporting_evidence_ids=[
+                                log.evidence_id,
+                                metric.evidence_id,
+                            ],
+                            contradicting_evidence_ids=[],
+                            required_checks=[],
+                            verified=False,
+                        )
+                    ]
+                )
+            ]
+        )
+    )
+
+    hypotheses = await engine.generate_hypotheses(incident(), [log, metric])
+
+    assert hypotheses[0].verified is True
+
+
+@pytest.mark.asyncio
 async def test_engine_maps_typed_remediation_arguments() -> None:
     current = incident().model_copy(
         update={
@@ -230,6 +282,46 @@ async def test_engine_maps_typed_remediation_arguments() -> None:
     assert proposal is not None
     assert proposal.arguments["repository"] == "acme/repo"
     assert proposal.arguments["check_profile"] == "python"
+
+
+@pytest.mark.asyncio
+async def test_engine_maps_typed_runtime_rollback_arguments() -> None:
+    current = incident().model_copy(
+        update={
+            "source": IncidentSource.ALERTMANAGER,
+            "kind": IncidentKind.RUNTIME_ALERT,
+            "service": "runtime-demo",
+            "metadata": {"allowed_actions": ["rollback_runtime_config"]},
+        }
+    )
+    hypothesis = HypothesisCandidate(
+        statement="The runtime override causes the high error rate",
+        confidence=0.99,
+        supporting_evidence_ids=[],
+        contradicting_evidence_ids=[],
+        required_checks=[],
+        verified=True,
+    )
+    decision = ActionDecision(
+        should_act=True,
+        tool_name="rollback_runtime_config",
+        description="Rollback the unsafe runtime override",
+        arguments=RuntimeRollbackRequest(
+            service="runtime-demo",
+            target_error_fraction=0.0,
+            reason="Logs identify the active 0.8 failure override",
+        ),
+        risk=RiskLevel.HIGH,
+        rollback_plan="Restore the previous override",
+        expected_outcome="Error ratio returns to normal",
+    )
+    engine = OpenAIInvestigationEngine(FakeClient([decision]))
+
+    proposal = await engine.propose_action(current, [], [hypothesis])
+
+    assert proposal is not None
+    assert proposal.tool_name == "rollback_runtime_config"
+    assert proposal.arguments["target_error_fraction"] == 0.0
 
 
 @pytest.mark.asyncio

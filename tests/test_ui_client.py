@@ -34,3 +34,29 @@ def test_client_reports_control_plane_detail(monkeypatch: pytest.MonkeyPatch) ->
 def test_client_requires_a_real_admin_token() -> None:
     assert not IncidentAPIClient("http://core:8000", "short").configured
     assert IncidentAPIClient("http://core:8000", "a" * 16).configured
+
+
+def test_client_submits_evidence_file_as_multipart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_request(*args, **kwargs):
+        captured.update(kwargs)
+        request = httpx.Request(args[0], args[1])
+        return httpx.Response(200, request=request, json={"status": "running"})
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+    client = IncidentAPIClient("http://core:8000", "a" * 16)
+
+    result = client.submit_file_evidence(
+        "incident-one",
+        request_id="request-one",
+        filename="service.log",
+        content=b"connection refused",
+        media_type="text/plain",
+    )
+
+    assert result == {"status": "running"}
+    assert captured["data"] == {"request_id": "request-one"}
+    assert captured["files"]["file"][0] == "service.log"
