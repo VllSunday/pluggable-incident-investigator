@@ -1,5 +1,7 @@
 # Incident Investigator
 
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 Incident Investigator принимает CI-сбой или runtime-alert, сам собирает доступные
 доказательства, проверяет несколько гипотез и предлагает только проверяемое безопасное
 действие. Изменение выполняется после подтверждения человека, а затем агент отдельно
@@ -131,3 +133,7 @@ uv run pytest
 
 Проект использует Python 3.12+, FastAPI, LangGraph, Streamlit, OpenAI Structured Outputs,
 Docker sandbox и LangSmith.
+
+## Лицензия
+
+Проект распространяется по [Apache License 2.0](LICENSE).
